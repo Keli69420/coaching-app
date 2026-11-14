@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Untitled</title>
+  <meta name="description" content="Dein Training von heute aus dem Plan deines Coachs. Trag ein, was du gemacht hast, und sieh, wie weit du schon bist.">
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#0B0B0B">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Untitled">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&display=swap">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Gradients the rings and the trend line paint with. -->
+  <svg class="defs" width="0" height="0" aria-hidden="true" focusable="false">
+    <defs>
+      <linearGradient id="g-lime" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#C9E85C"/>
+        <stop offset="1" stop-color="#4F6B0E"/>
+      </linearGradient>
+      <linearGradient id="g-fade" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#131313" stop-opacity=".10"/>
+        <stop offset="1" stop-color="#131313" stop-opacity="0"/>
+      </linearGradient>
+    </defs>
+  </svg>
+  <div class="app">
+    <section class="sheet">
+      <header class="top">
+        <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" width="24" height="24"><rect x="3" y="13" width="4.5" height="8" rx="1.6"/><rect x="9.75" y="8.5" width="4.5" height="12.5" rx="1.6"/><rect x="16.5" y="3" width="4.5" height="18" rx="1.6"/></svg></span>
+        <h1>Untitled</h1>
+        <span class="chipslot" id="chip"></span>
+      </header>
+      <p class="status" id="status" role="status" aria-live="polite"></p>
+      <div class="ladder" id="ladder" aria-label="Fortschritt"></div>
+    </section>
+    <main id="main"></main>
+  </div>
+  <noscript><p>Diese Seite braucht JavaScript.</p></noscript>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
