@@ -1,6 +1,7 @@
 import {
   parsePlan, sessionsOf, currentIndex, planDone, sessionComplete, hit, fmtTarget, fmtPrescription,
   ladderState, stepHistory, parseNum, todayIso, fmtDate, cleanState, emptyState, setValue, setNote, setTest, hasValues,
+  weeklyTotals, exerciseStats, sparkPoints, weeksAgo, weeksAgoLabel, fmtVal,
 } from "./logic.js";
 
 // The coach's plan. One file holds the ladder and every starting level (Plan A, B, C...).
@@ -8,14 +9,22 @@ const PLAN_URL = "plans/muscle-up.md";
 // Everything the client logs, on this phone only. Never rename it: old logs would look lost.
 const KEY = "coach.v1";
 const SAVE_DELAY_MS = 300;
+// How far back the Progress tab looks: from his first logged week, at least 4 weeks, at most 8,
+// so a four-week plan doesn't open on a chart that is mostly empty.
+const MIN_WEEKS = 4;
+const MAX_WEEKS = 8;
+let WEEKS = MIN_WEEKS;
 
 const root = document.querySelector(".app");
 const main = document.getElementById("main");
 const ladderEl = document.getElementById("ladder");
 const chipEl = document.getElementById("chip");
+const sheetEl = document.querySelector(".sheet");
+const pagesEl = document.getElementById("pages");
 const statusEl = document.getElementById("status");
 
 let today = todayIso();
+let page = "training"; // or "progress". Always opens on training.
 let program = null; // { ladder, plans, errors }
 let loadError = "";
 let state = load();
@@ -80,7 +89,14 @@ const shownIndex = () => {
 };
 
 function render() {
-  if (loadError || !program || program.errors.length) {
+  for (const b of pagesEl.querySelectorAll("button")) {
+    if (b.dataset.page === page) b.setAttribute("aria-current", "page");
+    else b.removeAttribute("aria-current");
+  }
+  const broken = Boolean(loadError || !program || program.errors.length);
+  pagesEl.hidden = broken || !plan() || pickerOpen;
+  sheetEl.classList.toggle("slim", broken || page !== "progress" || pickerOpen);
+  if (broken) {
     chipEl.innerHTML = "";
     ladderEl.innerHTML = "";
     if (loadError) main.innerHTML = msgHtml("Noch kein Plan", `<p>${esc(loadError)}</p>`);
@@ -97,8 +113,16 @@ function render() {
   chipEl.innerHTML = !picked ? ""
     : program.plans.length === 1 ? `<span class="chip">Plan <b>${esc(picked.id)}</b></span>`
     : `<button type="button" class="chip${pickerOpen ? " on" : ""}" data-act="picker" aria-expanded="${pickerOpen}" aria-label="Plan ${esc(picked.id)}. Tippen zum Wechseln.">Plan <b>${esc(picked.id)}</b></button>`;
-  ladderEl.innerHTML = ladderHtml();
-  main.innerHTML = pickerOpen || !picked ? pickerHtml(picked) : `<section class="session" id="session">${sessionHtml()}</section>`;
+  if (pickerOpen || !picked) {
+    ladderEl.innerHTML = "";
+    main.innerHTML = pickerHtml(picked);
+  } else if (page === "progress") {
+    ladderEl.innerHTML = ladderHtml();
+    main.innerHTML = progressHtml();
+  } else {
+    ladderEl.innerHTML = "";
+    main.innerHTML = `<section class="session" id="session">${sessionHtml()}</section>`;
+  }
 }
 
 const msgHtml = (title, body) => `<section class="msg"><h2>${esc(title)}</h2>${body}</section>`;
@@ -245,7 +269,6 @@ function sessionHtml() {
   const i = shownIndex();
   const s = list[i];
   const log = state.logs[s.key];
-  const notes = [...plan().notes, ...s.weekNotes, ...s.notes];
   const c = current();
   const away = i !== c;
   const backTo = state.logs[list[c].key]?.date === today ? "Zurück zu heute" : "Zurück zum nächsten Training";
@@ -263,8 +286,7 @@ function sessionHtml() {
     </div>
     <div class="dots" id="dots" role="group" aria-label="Trainings">${dotsHtml(i)}</div>
     ${away ? `<button type="button" class="link back" data-act="home">${backTo}</button>` : ""}
-    ${done ? `<p class="banner">Das war der ganze Plan. Zeit für einen neuen Test.</p>` : ""}
-    ${notes.length ? `<div class="daynotes">${notes.map((n) => `<p>${esc(n)}</p>`).join("")}</div>` : ""}
+    ${done ? `<p class="banner">Das war der ganze Plan. Zeit für einen neuen Test unter Fortschritt.</p>` : ""}
     <div class="items">${s.items.map((it) => itemHtml(it, log)).join("")}</div>
     <label class="notes">
       <span>Notizen</span>
@@ -308,6 +330,102 @@ function itemHtml(it, log) {
     </div>`;
 }
 
+/* ---------- the Progress tab, like Yapp's: this week, sets per week, one card per exercise ---------- */
+
+const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+function tileHtml(value, one, many, diff) {
+  const delta = diff > 0 ? `<b class="up">▲ ${diff}</b> vs. Vorwoche` : diff < 0 ? `<b>▼ ${-diff}</b> vs. Vorwoche` : "Gleich wie Vorwoche";
+  return `
+    <div class="tile">
+      <p class="big">${value}</p>
+      <p class="lbl">${value === 1 ? one : many}</p>
+      <p class="delta">${delta}</p>
+    </div>`;
+}
+
+function barsHtml(totals) {
+  const max = Math.max(1, ...totals.map((t) => t.sets));
+  return `
+    <div class="pchart" data-chart>
+      <p class="clabel">Sätze pro Woche</p>
+      <div class="bars" role="group" aria-label="Sätze pro Woche, letzte ${WEEKS} Wochen">
+        ${totals.map((t, i) => {
+          const say = `${weeksAgoLabel(t.weeksAgo)} · ${count(t.sets, "Satz", "Sätze")}, ${count(t.sessions, "Training", "Trainings")}`;
+          return `<button type="button" class="bar${t.weeksAgo === 0 ? " on" : ""}" data-read="${esc(say)}" data-i="${i}" data-dot="${i}" aria-label="${esc(say)}"><i style="height:${Math.round((t.sets / max) * 100)}%"></i></button>`;
+        }).join("")}
+      </div>
+      <p class="axis"><span class="read">${weeksAgoLabel(WEEKS - 1)}</span><span>diese Woche</span></p>
+    </div>`;
+}
+
+function sparkHtml(st) {
+  const W = 300, H = 56, PAD = 10;
+  const pts = sparkPoints(st.weekly, W, H, PAD);
+  if (!pts.length) return `<p class="none">In den letzten ${WEEKS} Wochen nicht gemacht.</p>`;
+  const step = (W - 2 * PAD) / (WEEKS - 1);
+  const lastI = pts[pts.length - 1].i;
+  const says = st.weekly.map((v, i) => `${weeksAgoLabel(WEEKS - 1 - i)} · ${v == null ? "nicht gemacht" : fmtVal(v, st.unit)}`);
+  return `
+    <div class="pchart spark" data-chart>
+      <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(`${st.name}, bester Satz pro Woche: ${says.join(", ")}`)}">
+        ${pts.length > 1 ? `<polyline points="${pts.map((p) => `${p.x},${p.y}`).join(" ")}"/>` : ""}
+        ${pts.map((p) => `<circle cx="${p.x}" cy="${p.y}" r="5" data-dot="${p.i}"${p.i === lastI ? ' class="on"' : ""}/>`).join("")}
+        ${says.map((say, i) => `<rect x="${PAD + i * step - step / 2}" y="0" width="${step}" height="${H}" fill="transparent" data-read="${esc(say)}" data-i="${i}"/>`).join("")}
+      </svg>
+      <p class="axis"><span class="read">${weeksAgoLabel(WEEKS - 1)}</span><span>diese Woche</span></p>
+    </div>`;
+}
+
+function statCardHtml(st) {
+  const v = (n) => esc(fmtVal(n, st.unit));
+  const arrow = { up: "▲", down: "▼", same: "=" }[st.trend] ?? "";
+  const word = { up: "besser", down: "schlechter", same: "gleich" }[st.trend] ?? "";
+  const cell = (c) => `<div class="cell"><span class="lbl">${weeksAgoLabel(c.weeksAgo)}</span><span class="cval">${v(c.best)}</span></div>`;
+  return `
+    <section class="pcard">
+      <div class="phead">
+        <h3>${esc(st.name)}</h3>
+        <p class="pr"><span class="prtag">Rekord</span><span class="prval">${v(st.pr.best)}</span></p>
+      </div>
+      <p class="prdate">${fmtDate(st.pr.date)}</p>
+      <div class="cmp${st.previous ? "" : " one"}">
+        ${cell(st.latest)}
+        ${st.previous ? `<span class="arrow ${st.trend}" role="img" aria-label="${word}">${arrow}</span>${cell(st.previous)}` : ""}
+      </div>
+      ${sparkHtml(st)}
+    </section>`;
+}
+
+function progressHtml() {
+  const first = Object.values(state.logs).map((l) => l.date).filter(Boolean).sort()[0];
+  WEEKS = Math.min(MAX_WEEKS, Math.max(MIN_WEEKS, first ? weeksAgo(first, today) + 1 : 0));
+  const totals = weeklyTotals(state.logs, today, WEEKS);
+  const now = totals[WEEKS - 1];
+  const before = totals[WEEKS - 2];
+  const stats = exerciseStats(program.plans.flatMap(sessionsOf), state.logs, today, WEEKS);
+  return `
+    <section class="progress">
+      <p class="sect">Diese Woche</p>
+      <div class="tiles">
+        ${tileHtml(now.sessions, "Training", "Trainings", now.sessions - before.sessions)}
+        ${tileHtml(now.sets, "Satz", "Sätze", now.sets - before.sets)}
+      </div>
+      ${barsHtml(totals)}
+      <p class="sect">Übungen</p>
+      ${stats.length ? `<div class="pcards">${stats.map(statCardHtml).join("")}</div>`
+        : `<p class="empty">Noch nichts eingetragen. Nach deinem ersten Training stehen hier deine Rekorde.</p>`}
+    </section>`;
+}
+
+// Tapping a bar or a week on a line says what it is, under the chart.
+function showRead(el) {
+  const chart = el.closest("[data-chart]");
+  if (!chart) return;
+  chart.querySelector(".read").textContent = el.dataset.read;
+  for (const d of chart.querySelectorAll("[data-dot]")) d.classList.toggle("on", d.dataset.dot === el.dataset.i);
+}
+
 /* ---------- typing ---------- */
 
 root.addEventListener("input", (e) => {
@@ -334,7 +452,7 @@ root.addEventListener("input", (e) => {
   saveSoon();
 });
 
-// Logging a pull-up can move the rings, and the first number turns "Als Nächstes" into "Heute".
+// The first number turns "Als Nächstes" into "Heute" and fills the session's dot.
 // Only those bits are redrawn, so the keyboard stays where it is.
 function refreshAfterLog() {
   const i = shownIndex();
@@ -342,7 +460,6 @@ function refreshAfterLog() {
   if (k) k.textContent = kicker(i);
   const d = document.getElementById("dots");
   if (d) d.innerHTML = dotsHtml(i);
-  if (!testing) ladderEl.innerHTML = ladderHtml();
 }
 
 // Tapping a number selects it, so typing replaces it. Safari puts the caret down on
@@ -386,6 +503,8 @@ function show(index) {
 }
 
 root.addEventListener("click", (e) => {
+  const read = e.target.closest("[data-read]");
+  if (read) { showRead(read); return; }
   const btn = e.target.closest("[data-act]");
   if (!btn) return;
   const act = btn.dataset.act;
@@ -410,6 +529,7 @@ root.addEventListener("click", (e) => {
     state.plan = btn.dataset.plan;
     pickerOpen = false;
     viewing = null;
+    page = "training";
     persist();
     render();
     return;
@@ -426,6 +546,16 @@ root.addEventListener("click", (e) => {
     viewing = null;
     render();
   }
+});
+
+pagesEl.addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-page]");
+  if (!btn || btn.dataset.page === page) return;
+  flush();
+  page = btn.dataset.page;
+  testing = null;
+  render();
+  document.body.scrollTo(0, 0);
 });
 
 /* ---------- staying right when the app comes back ---------- */

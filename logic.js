@@ -389,3 +389,90 @@ export function setTest(state, stepKey, value, today) {
   if (!Object.keys(byDate).length) delete state.tests[stepKey];
   return state;
 }
+
+/* ---------- the Progress tab: weeks run Monday to Sunday, same as Yapp ---------- */
+
+const DAY_MS = 86400000;
+const utc = (iso) => {
+  const [y, m, d] = iso.split("-").map(Number);
+  return Date.UTC(y, m - 1, d);
+};
+
+export function weekStart(iso) {
+  const t = utc(iso);
+  const sinceMonday = (new Date(t).getUTCDay() + 6) % 7;
+  return new Date(t - sinceMonday * DAY_MS).toISOString().slice(0, 10);
+}
+
+export const weeksAgo = (iso, today) => Math.round((utc(weekStart(today)) - utc(weekStart(iso))) / (7 * DAY_MS));
+
+export const weeksAgoLabel = (n) => (n === 0 ? "diese Woche" : n === 1 ? "letzte Woche" : `vor ${n} Wochen`);
+
+export const fmtVal = (n, unit) => (unit === "sec" ? `${n} s` : `${n} Wdh.`);
+
+const filled = (vals) => (vals || []).filter((v) => v != null);
+
+// Trainings and sets per week, oldest first, ending with this week. A training counts
+// in the week of its date once it has a number in it.
+export function weeklyTotals(logs, today, weeks = 8) {
+  const out = Array.from({ length: weeks }, (_, i) => ({ weeksAgo: weeks - 1 - i, sessions: 0, sets: 0 }));
+  for (const log of Object.values(logs || {})) {
+    if (!log.date || !hasValues(log)) continue;
+    const ago = weeksAgo(log.date, today);
+    if (ago < 0 || ago >= weeks) continue;
+    const bucket = out[weeks - 1 - ago];
+    bucket.sessions += 1;
+    bucket.sets += Object.values(log.vals).reduce((n, arr) => n + filled(arr).length, 0);
+  }
+  return out;
+}
+
+// One card per exercise he has typed a number in, most recently done first. Matched by name
+// and unit across days and plans, so push-ups on two different days are one card. The record
+// is his best single set; a tie keeps the first day he got it. Logs of a day that was renamed
+// in the plan file have no exercises to match, so they only count in the weekly totals.
+export function exerciseStats(sessions, logs, today, weeks = 8) {
+  const seen = new Map();
+  for (const s of sessions) {
+    const log = logs?.[s.key];
+    if (!log?.date) continue;
+    for (const it of s.items) {
+      const vals = filled(log.vals?.[it.key]);
+      if (!it.sets.length || !vals.length) continue;
+      const k = `${keyOf(it.name)}|${it.unit}`;
+      if (!seen.has(k)) seen.set(k, { name: it.name, unit: it.unit, days: [] });
+      seen.get(k).days.push({ date: log.date, best: Math.max(...vals) });
+    }
+  }
+  return [...seen.values()].map(({ name, unit, days }) => {
+    days.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    let pr = null;
+    const byWeek = new Map();
+    for (const d of days) {
+      if (!pr || d.best > pr.best) pr = d;
+      const ago = weeksAgo(d.date, today);
+      if (!byWeek.has(ago) || d.best > byWeek.get(ago)) byWeek.set(ago, d.best);
+    }
+    const logged = [...byWeek.keys()].sort((a, b) => a - b);
+    const at = (i) => (logged[i] === undefined ? null : { weeksAgo: logged[i], best: byWeek.get(logged[i]) });
+    const latest = at(0);
+    const previous = at(1);
+    const trend = !previous ? null : latest.best > previous.best ? "up" : latest.best < previous.best ? "down" : "same";
+    const weekly = Array.from({ length: weeks }, (_, i) => byWeek.get(weeks - 1 - i) ?? null);
+    return { name, unit, pr: { best: pr.best, date: pr.date }, latest, previous, trend, weekly, lastDate: days[days.length - 1].date };
+  }).sort((a, b) => (a.lastDate < b.lastDate ? 1 : a.lastDate > b.lastDate ? -1 : 0));
+}
+
+// Where each week's best sits in a w × h box, empty weeks skipped. Highest at the top.
+export function sparkPoints(weekly, w, h, pad) {
+  const vals = weekly.filter((v) => v != null);
+  if (!vals.length) return [];
+  const hi = Math.max(...vals);
+  const lo = Math.min(...vals);
+  const step = weekly.length > 1 ? (w - 2 * pad) / (weekly.length - 1) : 0;
+  return weekly.flatMap((v, i) => {
+    if (v == null) return [];
+    const y = hi === lo ? h / 2 : pad + ((hi - v) / (hi - lo)) * (h - 2 * pad);
+    return [{ i, x: +(pad + i * step).toFixed(1), y: +y.toFixed(1) }];
+  });
+}

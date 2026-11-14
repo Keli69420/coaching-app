@@ -15,7 +15,7 @@ EXERCISES, one per line (the numbers here only show the format):
   - Exercise: 5, 4, 3          a different goal per set
   - Exercise: 3 x 5 | note     everything after | is a note he sees (tempo, band colour, rest)
   - Something to remember      no colon = a reminder with no numbers to fill in
-A plain line (no dash) under a day shows at the top of that day: warm-up, rest times, what to focus on.
+A plain line (no dash) is for you only: the app doesn't show it (Keli, 14 Nov: exercises only). Anything he has to see goes after | on an exercise, or as a reminder line.
 
 THE LADDER MOVES on a test (Keli taps a step and types the result) and on any logged set of an
 exercise named exactly like the step: "Klimmzüge", "Chest-to-Bar", "Muscle-up".

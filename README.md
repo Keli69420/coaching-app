@@ -1,6 +1,9 @@
 # Coaching app (name to come)
 
-One screen for a client training toward a goal. On top, a white sheet with the **ladder** as three rings showing how close he is (for the first client: pull-ups → chest-to-bar → muscle-up), and a trend line of the step he's on. Below it, on black, **today's session** from the coach's plan: a dot per session for the whole plan, then one card per exercise with a disc per set where he types what he actually did. A hit set turns lime and the card glows brighter as sets get hit.
+Two tabs for a client training toward a goal, switched at the bottom like Yapp.
+
+- **Training** (opens here): **today's session** from the coach's plan, nothing else. A dot per session for the whole plan, then one card per exercise with a disc per set where he types what he actually did. A hit set turns lime and the card glows brighter as sets get hit.
+- **Fortschritt**: a white sheet with the **ladder** as three rings showing how close he is (for the first client: pull-ups → chest-to-bar → muscle-up) and a trend line of the step he's on; tap a ring to type a test. Below it, like Yapp's Progress page: this week's trainings and sets against last week, sets per week as bars, and one card per exercise with his record, this week against the last week he did it, and a line of his best per week.
 
 **The screen is in German** (Swiss: du, "ss" never "ß"), and so are the plan-file error messages. This README and `tools/` stay in English.
 
@@ -28,13 +31,11 @@ First open: tap each ladder step and type the test result. With one plan in the 
 - Muscle-up: 1
 
 # Plan A: who it's for
-A plain line here shows on every day of Plan A.
+A plain line is for the coach only: the app doesn't show it.
 
 ## Week 1
-A plain line here shows on every day of week 1.
 
 ### Day 1
-A plain line here shows at the top of this day.
 - Exercise: 3 x 5            3 sets of 5 reps
 - Exercise: 3 x 20s          seconds
 - Exercise: 3 x max          he types whatever he got
@@ -44,7 +45,7 @@ A plain line here shows at the top of this day.
 - Something to remember      no colon: a reminder with no fields
 ```
 
-(The numbers above only show the format.) Seconds can also be written `Sek` or `Sekunden`, reps `Wdh`. Obsidian comments (`%% ... %%`), HTML comments and front matter are ignored, so instructions can live in the file.
+(The numbers above only show the format.) Anything he has to see goes after `|` on an exercise, or on its own as a reminder line. Seconds can also be written `Sek` or `Sekunden`, reps `Wdh`. Obsidian comments (`%% ... %%`), HTML comments and front matter are ignored, so instructions can live in the file.
 
 **Check before every push:**
 
@@ -60,6 +61,7 @@ It prints every plan as the app will read it and refuses typos with a line numbe
 - **A session's date** is the day its first number went in. Fixing an old number later doesn't move it.
 - **The ladder:** each step's best is the higher of (a) a test typed in by tapping the step and (b) any logged set of an exercise with exactly that step's name, capitals ignored. So "Negative pull-ups" never counts as a pull-up. One test per step per day; typing again the same day replaces it, an empty one removes it. `ladderState()` in `logic.js`.
 - **Hit:** at least the bottom of the goal; any number counts for "max". A hit set gets the volt tick.
+- **Fortschritt:** weeks run Monday to Sunday. A training counts in the week of its date once it has a number in it. Exercise cards match by name and unit across days and plans, and only count logged sets (tests move the rings, not the cards). The charts start at his first logged week, at least 4 weeks and at most 8 back. `weeklyTotals()` and `exerciseStats()` in `logic.js`.
 - **Switching plan** keeps everything: logs are stored per plan and day, and the ladder counts all of them.
 - **Logs are keyed by plan, week title and day title,** and exercises by name. Renaming a week or day in the plan file after he has logged it hides those logs from the session (the ladder still counts them). Adding or reordering exercises is safe.
 

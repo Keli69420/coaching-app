@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   parseTarget, parsePrescription, parsePlan, sessionsOf, currentIndex, planDone, sessionComplete,
   hit, fmtPrescription, ladderState, stepHistory, parseNum, emptyState, cleanState, setValue, setNote, setTest, keyOf, hasValues,
+  weekStart, weeksAgo, weeksAgoLabel, weeklyTotals, exerciseStats, sparkPoints, fmtVal,
 } from "../logic.js";
 
 const DEMO = readFileSync(new URL("./fixtures/demo.md", import.meta.url), "utf8");
@@ -215,4 +216,76 @@ test("trend: one point per day, best of tests and sets, oldest first", () => {
 test("max in seconds says so", () => {
   const it = parsePlan("# Plan A\n## W\n### D\n- Dead hang: 2 x max s\n").plans[0].weeks[0].days[0].items[0];
   assert.equal(fmtPrescription(it), "2 × max s");
+});
+
+/* ---------- the Progress tab ---------- */
+
+const TWO_DAYS = parsePlan(`# Plan A: test
+## Woche 1
+### Tag 1
+- Liegestütze: 3 x 6
+- Halten: 2 x 20s
+- Aufwärmen
+### Tag 2
+- Liegestütze: 2 x 8
+- Liegestütze: 1 x max
+`);
+
+test("weeks run Monday to Sunday", () => {
+  assert.equal(weekStart("2026-11-16"), "2026-11-16"); // Monday
+  assert.equal(weekStart("2026-11-22"), "2026-11-16"); // Sunday
+  assert.equal(weeksAgo("2026-11-15", "2026-11-16"), 1);
+  assert.equal(weeksAgo("2026-11-16", "2026-11-22"), 0);
+  assert.equal(weeksAgo("2026-12-30", "2027-01-04"), 1); // across new year
+  assert.deepEqual([0, 1, 3].map(weeksAgoLabel), ["diese Woche", "letzte Woche", "vor 3 Wochen"]);
+  assert.equal(fmtVal(20, "sec"), "20 s");
+  assert.equal(fmtVal(6, "reps"), "6 Wdh.");
+});
+
+test("weekly totals count trainings with a number in them, and their filled sets", () => {
+  const st = emptyState();
+  const [d1, d2] = sessionsOf(TWO_DAYS.plans[0]);
+  setValue(st, d1, "liegestütze", 0, 6, "2026-11-10");
+  setValue(st, d1, "liegestütze", 1, 5, "2026-11-10");
+  setNote(st, d2, "nur eine Notiz", "2026-11-17"); // no numbers: not a training
+  const totals = weeklyTotals(st.logs, "2026-11-18", 4);
+  assert.equal(totals.length, 4);
+  assert.deepEqual(totals.map((t) => t.weeksAgo), [3, 2, 1, 0]);
+  assert.deepEqual(totals[2], { weeksAgo: 1, sessions: 1, sets: 2 });
+  assert.deepEqual(totals[3], { weeksAgo: 0, sessions: 0, sets: 0 });
+});
+
+test("exercise cards: one per name and unit, record, this week against the last, newest first", () => {
+  const st = emptyState();
+  const [d1, d2] = sessionsOf(TWO_DAYS.plans[0]);
+  setValue(st, d1, "liegestütze", 0, 7, "2026-11-10");
+  setValue(st, d1, "halten", 0, 25, "2026-11-10");
+  setValue(st, d2, "liegestütze", 0, 6, "2026-11-17");
+  setValue(st, d2, "liegestütze#2", 0, 7, "2026-11-17"); // same name twice in a day: one card
+  const stats = exerciseStats(sessionsOf(TWO_DAYS.plans[0]), st.logs, "2026-11-18", 8);
+  assert.deepEqual(stats.map((s) => s.name), ["Liegestütze", "Halten"]);
+  const pu = stats[0];
+  assert.equal(pu.unit, "reps");
+  assert.deepEqual(pu.pr, { best: 7, date: "2026-11-10" }); // a tie keeps the first day
+  assert.deepEqual(pu.latest, { weeksAgo: 0, best: 7 });
+  assert.deepEqual(pu.previous, { weeksAgo: 1, best: 7 });
+  assert.equal(pu.trend, "same");
+  assert.deepEqual(pu.weekly, [null, null, null, null, null, null, 7, 7]);
+  assert.equal(stats[1].unit, "sec");
+  assert.equal(stats[1].previous, null);
+  assert.equal(stats[1].trend, null);
+});
+
+test("exercise cards skip reminders and exercises with nothing typed", () => {
+  const st = emptyState();
+  const [d1] = sessionsOf(TWO_DAYS.plans[0]);
+  setNote(st, d1, "müde", "2026-11-10");
+  assert.deepEqual(exerciseStats(sessionsOf(TWO_DAYS.plans[0]), st.logs, "2026-11-18"), []);
+});
+
+test("spark points: highest at the top, empty weeks skipped", () => {
+  assert.deepEqual(sparkPoints([null, null], 100, 50, 10), []);
+  const pts = sparkPoints([4, null, 8], 100, 50, 10);
+  assert.deepEqual(pts, [{ i: 0, x: 10, y: 40 }, { i: 2, x: 90, y: 10 }]);
+  assert.deepEqual(sparkPoints([5, 5], 100, 50, 10).map((p) => p.y), [25, 25]);
 });
