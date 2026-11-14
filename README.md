@@ -2,8 +2,10 @@
 
 Two tabs for a client training toward a goal, switched at the bottom like Yapp.
 
-- **Training** (opens here): **today's session** from the coach's plan, nothing else. A dot per session for the whole plan. Like Yapp, he **starts** the session (until then it's a list of what's coming and a Start button), types into one card per exercise with a disc per set, and **saves** it. A hit set turns lime and the card glows brighter as sets get hit. Saved, the session is a summary card (sets, new records, what's next) with Bearbeiten to change it and "Training löschen" (two taps) to remove it.
-- **Fortschritt**: a white sheet with the **ladder** as three rings showing how close he is (for the first client: pull-ups → chest-to-bar → muscle-up) and a trend line of the step he's on; tap a ring to type a test. Below it, like Yapp's Progress page: this week's trainings and sets against last week, sets per week as bars, and one card per exercise with his record, this week against the last week he did it, and a line of his best per week.
+**The look** (14 Nov, from reference shots Keli sent): near-black with a faint dot grid, frosted dark cards, saturated glow cards (violet, pink, blue, teal, orange), big numbers in a dot-matrix font (Doto, round dots), dials as rings of ticks, thin geometric text (Outfit).
+
+- **Training** (opens here): **today's session** from the coach's plan, nothing else. A dot per session for the whole plan. Like Yapp, he **starts** the session (until then it's a list of what's coming and a Start button), types into one card per exercise with a disc per set, and **saves** it. Each exercise card has its own colour (violet, pink, blue, teal, orange); a hit set turns white and the card glows brighter in its colour as sets get hit. Saved, the session is a summary card (sets, new records, what's next) with Bearbeiten to change it and "Training löschen" (two taps) to remove it.
+- **Fortschritt**: the **ladder** as three tiles with a tick dial each, showing how close he is (for the first client: pull-ups → chest-to-bar → muscle-up) and a trend card for the step he's on; tap a dial to type a test. Below it, like Yapp's Progress page: this week's trainings and sets against last week, sets per week as columns of dots, and one card per exercise with his record, this week against the last week he did it, and a line of his best per week.
 
 **The screen is in German** (Swiss: du, "ss" never "ß"), and so are the plan-file error messages. This README and `tools/` stay in English.
 

@@ -76,14 +76,27 @@ const RIGHT = chev("M2.5 2 8 8l-5.5 6");
 const TICK = `<svg viewBox="0 0 16 12" width="16" height="12" aria-hidden="true"><path d="M1.5 6.5 6 10.5 14.5 1.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 const LEFT = chev("M7.5 2 2 8l5.5 6");
 
-// A ring that fills clockwise from the top. share 0..1.
-function ring(share, size, r, cls = "") {
-  const c = 2 * Math.PI * r;
-  const arc = share > 0
-    ? `<circle class="arc" cx="${size / 2}" cy="${size / 2}" r="${r}" stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${(c * (1 - share)).toFixed(2)}"/>`
-    : "";
-  return `<svg class="ring ${cls}" viewBox="0 0 ${size} ${size}" aria-hidden="true"><circle class="track" cx="${size / 2}" cy="${size / 2}" r="${r}"/>${arc}</svg>`;
+// A dial of n ticks like a watch face; the lit ones fill clockwise from the top. share 0..1.
+// Any progress lights at least one tick, and only a full share lights them all.
+function ticks(share, size, n, len) {
+  const c = size / 2, r1 = c - 1, r0 = r1 - len;
+  const raw = Math.round(share * n);
+  const lit = share <= 0 ? 0 : share >= 1 ? n : Math.min(n - 1, Math.max(1, raw));
+  let out = "";
+  for (let k = 0; k < n; k++) {
+    const a = (k / n) * 2 * Math.PI - Math.PI / 2;
+    const xy = (r) => [(c + r * Math.cos(a)).toFixed(2), (c + r * Math.sin(a)).toFixed(2)];
+    const [x1, y1] = xy(r0), [x2, y2] = xy(r1);
+    out += `<line class="${k < lit ? "on" : "off"}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`;
+  }
+  return `<svg class="ticks" viewBox="0 0 ${size} ${size}" aria-hidden="true">${out}</svg>`;
 }
+
+// Each exercise card, and its line in the list before Start, gets one of these colours in turn.
+const HUES = 5;
+
+// A value with its number in dot-matrix and the unit in plain type: "22 s", "6 Wdh.".
+const numHtml = (n, unit) => `<b class="num">${esc(n)}</b><small class="unit">${unit === "sec" ? "s" : "Wdh."}</small>`;
 
 const plan = () => program?.plans.find((p) => p.id === state.plan) ?? null;
 const sessions = () => sessionsOf(plan());
@@ -142,7 +155,7 @@ function ladderHtml() {
     return `
       <button type="button" class="gauge ${cls}${testing === s.key ? " open" : ""}" data-act="test" data-step="${esc(s.key)}" aria-expanded="${testing === s.key}"
         aria-label="${esc(s.name)}: Rekord ${s.best ?? "noch keiner"} von ${s.target}${unit}. Tippen, um einen Test einzutragen.">
-        <span class="dial">${ring(s.share, 100, 43)}
+        <span class="dial">${ticks(s.share, 100, 48, 9)}
           <span class="val">${s.best == null ? `<b class="none">0</b>` : `<b>${s.best}</b>`}<small>/${s.target}${unit}</small></span>
         </span>
         <span class="gname">${esc(s.name)}${RIGHT}</span>
@@ -256,16 +269,18 @@ function kicker(i) {
   return i < c ? "Nicht eingetragen" : "Kommt noch";
 }
 
-// The whole plan as a row of dots, a gap between weeks: lime = all sets in,
-// olive = some, hollow = skipped, dark = ahead. The ringed one is on screen.
+// The whole plan as a row of dots, a gap between weeks, each day of the week in its own
+// colour: bright = all sets in, faint = some, hollow = skipped, dark = ahead. The ringed one is on screen.
 function dotsHtml(shown) {
   const list = sessions();
   const c = current();
+  let nth = 0;
   return list.map((s, j) => {
     const log = state.logs[s.key];
     const st = hasValues(log) ? (sessionComplete(s, log) ? "full" : "part") : j < c ? "missed" : "ahead";
-    const wk = j > 0 && s.week !== list[j - 1].week ? " wk" : "";
-    return `<button type="button" class="dot ${st}${wk}${j === shown ? " here" : ""}" data-act="go" data-i="${j}" aria-label="${esc(s.week)} · ${esc(s.day)}"${j === shown ? ' aria-current="true"' : ""}></button>`;
+    const newWeek = j > 0 && s.week !== list[j - 1].week;
+    nth = newWeek ? 0 : j > 0 ? nth + 1 : 0;
+    return `<button type="button" class="dot ${st} hue${nth % HUES}${newWeek ? " wk" : ""}${j === shown ? " here" : ""}" data-act="go" data-i="${j}" aria-label="${esc(s.week)} · ${esc(s.day)}"${j === shown ? ' aria-current="true"' : ""}></button>`;
   }).join("");
 }
 
@@ -296,7 +311,7 @@ function sessionHtml() {
       <div class="exbar">
         <button type="button" class="pill" data-act="stop" data-confirm="${log.saved ? "Nochmal tippen: Änderungen weg" : "Nochmal tippen zum Verwerfen"}">${log.saved ? "Bearbeiten abbrechen" : "Training abbrechen"}</button>
       </div>
-      <div class="items">${s.items.map((it) => itemHtml(it, log)).join("")}</div>
+      <div class="items">${s.items.map((it, n) => itemHtml(it, log, n)).join("")}</div>
       <label class="notes">
         <span>Notizen</span>
         <textarea id="note" rows="2" placeholder="Wie hat es sich angefühlt? Tut etwas weh?">${esc(log.note ?? "")}</textarea>
@@ -309,7 +324,7 @@ function sessionHtml() {
 function ghostHtml(s) {
   return `
     <button type="button" class="start" data-act="start"><span>Training starten</span><span class="knob">${RIGHT}</span></button>
-    <ul class="exlist">${s.items.map((it) => `<li><span>${esc(it.name)}</span>${it.sets.length ? `<small>${esc(fmtPrescription(it))}</small>` : ""}</li>`).join("")}</ul>`;
+    <ul class="exlist">${s.items.map((it, n) => `<li class="hue${n % HUES}"><span><i aria-hidden="true"></i>${esc(it.name)}</span>${it.sets.length ? `<small>${esc(fmtPrescription(it))}</small>` : ""}</li>`).join("")}</ul>`;
 }
 
 // Saved: a summary card instead of the fields. Bearbeiten opens them again.
@@ -324,7 +339,7 @@ function savedHtml(s, next) {
         <div class="savedtext"><h3>${esc(s.day)} gespeichert</h3><p>${bits.join(" · ")}</p></div>
         <button type="button" class="pill" data-act="reopen">Bearbeiten</button>
       </div>
-      ${records.map((r) => `<p class="savedpr"><span class="prtag">Rekord</span><span class="savedname">${esc(r.name)}</span><span class="prval">${esc(fmtVal(r.best, r.unit))}</span></p>`).join("")}
+      ${records.map((r) => `<p class="savedpr"><span class="prtag">Rekord</span><span class="savedname">${esc(r.name)}</span><span class="prval">${numHtml(r.best, r.unit)}</span></p>`).join("")}
       ${next ? `<p class="savednext">Als Nächstes: ${esc(next.week)} · ${esc(next.day)}</p>` : ""}
     </section>
     <button type="button" class="textbtn" data-act="delete">Training löschen</button>`;
@@ -332,11 +347,11 @@ function savedHtml(s, next) {
 
 const hitsOf = (it, vals) => it.sets.filter((t, j) => hit(t, vals[j] ?? null)).length;
 const miniHtml = (hits, total) =>
-  `<span class="mini" aria-label="${hits} von ${total} Sätzen geschafft">${ring(hits / total, 44, 18)}<span>${hits}/${total}</span></span>`;
+  `<span class="mini" aria-label="${hits} von ${total} Sätzen geschafft">${ticks(hits / total, 44, 24, 5)}<span>${hits}/${total}</span></span>`;
 
-// Each exercise is a card that glows brighter as sets get hit. A set is a disc:
-// the goal shows inside until he types, and a hit disc turns lime.
-function itemHtml(it, log) {
+// Each exercise is a card that glows brighter in its own colour as sets get hit. A set is
+// a disc: the goal shows inside until he types, and a hit disc turns white.
+function itemHtml(it, log, n) {
   if (!it.sets.length) {
     return `
       <div class="item reminder">
@@ -356,7 +371,7 @@ function itemHtml(it, log) {
       </span>`;
   }).join("");
   return `
-    <div class="item" data-key="${esc(it.key)}" style="--p:${(hits / it.sets.length).toFixed(3)}">
+    <div class="item hue${n % HUES}" data-key="${esc(it.key)}" style="--p:${(hits / it.sets.length).toFixed(3)}">
       <div class="itemhead">
         <div><h3>${esc(it.name)}</h3><p class="rx">${esc(fmtPrescription(it))}</p></div>
         ${miniHtml(hits, it.sets.length)}
@@ -380,6 +395,15 @@ function tileHtml(value, one, many, diff) {
     </div>`;
 }
 
+// Each week is a column of dots, two wide: the more sets, the more rows light up.
+const BAR_ROWS = 6;
+function barDots(sets, max) {
+  const lit = sets > 0 ? Math.max(1, Math.round((sets / max) * BAR_ROWS)) : 0;
+  let out = "";
+  for (let row = BAR_ROWS - 1; row >= 0; row--) out += `<i${row < lit ? ' class="lit"' : ""}></i><i${row < lit ? ' class="lit"' : ""}></i>`;
+  return out;
+}
+
 function barsHtml(totals) {
   const max = Math.max(1, ...totals.map((t) => t.sets));
   return `
@@ -388,7 +412,7 @@ function barsHtml(totals) {
       <div class="bars" role="group" aria-label="Sätze pro Woche, letzte ${WEEKS} Wochen">
         ${totals.map((t, i) => {
           const say = `${weeksAgoLabel(t.weeksAgo)} · ${count(t.sets, "Satz", "Sätze")}, ${count(t.sessions, "Training", "Trainings")}`;
-          return `<button type="button" class="bar${t.weeksAgo === 0 ? " on" : ""}" data-read="${esc(say)}" data-i="${i}" data-dot="${i}" aria-label="${esc(say)}"><i style="height:${Math.round((t.sets / max) * 100)}%"></i></button>`;
+          return `<button type="button" class="bar${t.weeksAgo === 0 ? " on" : ""}" data-read="${esc(say)}" data-i="${i}" data-dot="${i}" aria-label="${esc(say)}">${barDots(t.sets, max)}</button>`;
         }).join("")}
       </div>
       <p class="axis"><span class="read">${weeksAgoLabel(WEEKS - 1)}</span><span>diese Woche</span></p>
@@ -414,7 +438,7 @@ function sparkHtml(st) {
 }
 
 function statCardHtml(st) {
-  const v = (n) => esc(fmtVal(n, st.unit));
+  const v = (n) => numHtml(n, st.unit);
   const arrow = { up: "▲", down: "▼", same: "=" }[st.trend] ?? "";
   const word = { up: "besser", down: "schlechter", same: "gleich" }[st.trend] ?? "";
   const cell = (c) => `<div class="cell"><span class="lbl">${weeksAgoLabel(c.weeksAgo)}</span><span class="cval">${v(c.best)}</span></div>`;

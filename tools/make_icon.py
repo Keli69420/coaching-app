@@ -4,21 +4,23 @@
 import struct
 import zlib
 
-BG = (0x11, 0x12, 0x11)
-VOLT = (0xD6, 0xF5, 0x4A)
+BG = (0x05, 0x05, 0x06)
+# One colour per step, from the app's palette: blue, pink, violet.
+COLOURS = [(0x5B, 0x7C, 0xFF), (0xF0, 0x6B, 0xC4), (0xA6, 0x6B, 0xFF)]
 SIZE = 512
 R = 18  # corner radius of each step
 BARS = [(118, 300, 76, 120), (218, 230, 76, 190), (318, 160, 76, 260)]  # x, y, w, h on a 512 canvas
 
 
 def inside(px, py):
-    for x, y, w, h in BARS:
+    """Index of the step this point is on, or -1."""
+    for n, (x, y, w, h) in enumerate(BARS):
         if x <= px <= x + w and y <= py <= y + h:
             cx = min(max(px, x + R), x + w - R)
             cy = min(max(py, y + R), y + h - R)
             if (px - cx) ** 2 + (py - cy) ** 2 <= R * R:
-                return True
-    return False
+                return n
+    return -1
 
 
 def render(size, ss=4):
@@ -27,13 +29,14 @@ def render(size, ss=4):
     for j in range(size):
         row = bytearray([0])
         for i in range(size):
-            hits = 0
+            acc = [0.0, 0.0, 0.0]
             for a in range(ss):
                 for b in range(ss):
-                    if inside((i + (a + 0.5) / ss) * scale, (j + (b + 0.5) / ss) * scale):
-                        hits += 1
-            t = hits / (ss * ss)
-            row += bytes(round(BG[k] + (VOLT[k] - BG[k]) * t) for k in range(3))
+                    n = inside((i + (a + 0.5) / ss) * scale, (j + (b + 0.5) / ss) * scale)
+                    c = COLOURS[n] if n >= 0 else BG
+                    for k in range(3):
+                        acc[k] += c[k]
+            row += bytes(round(acc[k] / (ss * ss)) for k in range(3))
         rows.append(bytes(row))
     return b"".join(rows)
 
@@ -51,9 +54,9 @@ def png(path, size):
 
 def svg(path):
     hexc = lambda c: "#%02X%02X%02X" % c
-    rects = "".join(f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="{R}"/>' for x, y, w, h in BARS)
+    rects = "".join(f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="{R}" fill="{hexc(c)}"/>' for (x, y, w, h), c in zip(BARS, COLOURS))
     with open(path, "w") as f:
-        f.write(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {SIZE} {SIZE}"><rect width="{SIZE}" height="{SIZE}" rx="96" fill="{hexc(BG)}"/><g fill="{hexc(VOLT)}">{rects}</g></svg>\n')
+        f.write(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {SIZE} {SIZE}"><rect width="{SIZE}" height="{SIZE}" rx="96" fill="{hexc(BG)}"/>{rects}</svg>\n')
 
 
 png("icon-180.png", 180)
