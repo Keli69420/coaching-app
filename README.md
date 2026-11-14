@@ -2,7 +2,7 @@
 
 Two tabs for a client training toward a goal, switched at the bottom like Yapp.
 
-- **Training** (opens here): **today's session** from the coach's plan, nothing else. A dot per session for the whole plan, then one card per exercise with a disc per set where he types what he actually did. A hit set turns lime and the card glows brighter as sets get hit.
+- **Training** (opens here): **today's session** from the coach's plan, nothing else. A dot per session for the whole plan. Like Yapp, he **starts** the session (until then it's a list of what's coming and a Start button), types into one card per exercise with a disc per set, and **saves** it. A hit set turns lime and the card glows brighter as sets get hit. Saved, the session is a summary card (sets, new records, what's next) with Bearbeiten to change it and "Training löschen" (two taps) to remove it.
 - **Fortschritt**: a white sheet with the **ladder** as three rings showing how close he is (for the first client: pull-ups → chest-to-bar → muscle-up) and a trend line of the step he's on; tap a ring to type a test. Below it, like Yapp's Progress page: this week's trainings and sets against last week, sets per week as bars, and one card per exercise with his record, this week against the last week he did it, and a line of his best per week.
 
 **The screen is in German** (Swiss: du, "ss" never "ß"), and so are the plan-file error messages. This README and `tools/` stay in English.
@@ -13,7 +13,7 @@ The coach's plan is a **text file**, not code. Client three with the same goal n
 
 Open the link in Safari, then **⋯ → Share → View More → Add to Home Screen → Add** (leave "Open as Web App" on). Do this **before logging anything**, then always open it from the home-screen icon. The home-screen app and Safari keep separate data (found on Yapp).
 
-First open: tap each ladder step and type the test result. With one plan in the file it is picked for him. That's the whole setup.
+First open: on Fortschritt, tap each ladder step and type the test result. With one plan in the file it is picked for him and there's no plan chip. That's the whole setup.
 
 ## Where things live
 
@@ -57,8 +57,9 @@ It prints every plan as the app will read it and refuses typos with a line numbe
 
 ## How it decides things
 
-- **Which session opens:** one he logged something in today; otherwise the one after the furthest session he has logged anything in (so a skipped day doesn't pin the app to it); otherwise the first. `currentIndex()` in `logic.js`.
-- **A session's date** is the day its first number went in. Fixing an old number later doesn't move it.
+- **Which session opens:** one he started today; otherwise the one after the furthest session he has logged anything in (so a skipped day doesn't pin the app to it); otherwise the first. `currentIndex()` in `logic.js`.
+- **A session's date** is the day he started it. Fixing an old number later doesn't move it.
+- **Start, save, edit** work like Yapp: Start makes an empty session, Save needs at least one number, Bearbeiten keeps a copy so "Bearbeiten abbrechen" puts the saved numbers back, and "Training abbrechen" on a new session throws it away (both two taps). A session started on an earlier day with nothing typed is dropped when the app opens. Saving is a summary, not a gate: the dots, the ladder and Fortschritt count every number he typed, saved or not, like Yapp. A record on the saved card has to beat every earlier day for that exercise. `startSession()` to `tidyLogs()` and `sessionSummary()` in `logic.js`.
 - **The ladder:** each step's best is the higher of (a) a test typed in by tapping the step and (b) any logged set of an exercise with exactly that step's name, capitals ignored. So "Negative pull-ups" never counts as a pull-up. One test per step per day; typing again the same day replaces it, an empty one removes it. `ladderState()` in `logic.js`.
 - **Hit:** at least the bottom of the goal; any number counts for "max". A hit set gets the volt tick.
 - **Fortschritt:** weeks run Monday to Sunday. A training counts in the week of its date once it has a number in it. Exercise cards match by name and unit across days and plans, and only count logged sets (tests move the rings, not the cards). The charts start at his first logged week, at least 4 weeks and at most 8 back. `weeklyTotals()` and `exerciseStats()` in `logic.js`.

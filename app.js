@@ -2,6 +2,7 @@ import {
   parsePlan, sessionsOf, currentIndex, planDone, sessionComplete, hit, fmtTarget, fmtPrescription,
   ladderState, stepHistory, parseNum, todayIso, fmtDate, cleanState, emptyState, setValue, setNote, setTest, hasValues,
   weeklyTotals, exerciseStats, sparkPoints, weeksAgo, weeksAgoLabel, fmtVal,
+  startSession, finishSession, reopenSession, stopSession, deleteSession, tidyLogs, sessionSummary,
 } from "./logic.js";
 
 // The coach's plan. One file holds the ladder and every starting level (Plan A, B, C...).
@@ -9,6 +10,7 @@ const PLAN_URL = "plans/muscle-up.md";
 // Everything the client logs, on this phone only. Never rename it: old logs would look lost.
 const KEY = "coach.v1";
 const SAVE_DELAY_MS = 300;
+const ARMED_MS = 3000; // how long a "tap again to…" button waits for the second tap
 // How far back the Progress tab looks: from his first logged week, at least 4 weeks, at most 8,
 // so a four-week plan doesn't open on a chart that is mostly empty.
 const MIN_WEEKS = 4;
@@ -27,7 +29,7 @@ let today = todayIso();
 let page = "training"; // or "progress". Always opens on training.
 let program = null; // { ladder, plans, errors }
 let loadError = "";
-let state = load();
+let state = tidyLogs(load(), today);
 let viewing = null; // index of the session on screen; null means the one the app picks
 let pickerOpen = false;
 let testing = null; // ladder step key while its test field is open
@@ -51,8 +53,10 @@ function persist() {
     localStorage.setItem(KEY, JSON.stringify(state));
     pending = false;
     statusEl.textContent = "";
+    return true;
   } catch {
     statusEl.textContent = "nicht gespeichert";
+    return false;
   }
 }
 
@@ -69,6 +73,7 @@ const flush = () => { if (pending) persist(); };
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const chev = (d) => `<svg viewBox="0 0 10 16" width="8" height="13" aria-hidden="true"><path d="${d}" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 const RIGHT = chev("M2.5 2 8 8l-5.5 6");
+const TICK = `<svg viewBox="0 0 16 12" width="16" height="12" aria-hidden="true"><path d="M1.5 6.5 6 10.5 14.5 1.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 const LEFT = chev("M7.5 2 2 8l5.5 6");
 
 // A ring that fills clockwise from the top. share 0..1.
@@ -109,9 +114,8 @@ function render() {
     return;
   }
   const picked = plan();
-  // With one plan in the file there's nothing to switch to, so the chip is just a label.
-  chipEl.innerHTML = !picked ? ""
-    : program.plans.length === 1 ? `<span class="chip">Plan <b>${esc(picked.id)}</b></span>`
+  // With one plan in the file there's nothing to switch to, so there's no chip at all.
+  chipEl.innerHTML = !picked || program.plans.length === 1 ? ""
     : `<button type="button" class="chip${pickerOpen ? " on" : ""}" data-act="picker" aria-expanded="${pickerOpen}" aria-label="Plan ${esc(picked.id)}. Tippen zum Wechseln.">Plan <b>${esc(picked.id)}</b></button>`;
   if (pickerOpen || !picked) {
     ladderEl.innerHTML = "";
@@ -243,9 +247,10 @@ function kicker(i) {
   const log = state.logs[s.key];
   const c = current();
   if (i === list.length - 1 && planDone(list, state.logs, today)) return "Plan fertig";
-  if (hasValues(log)) {
+  if (log?.done) return log.date === today ? "Heute · gespeichert" : `Erledigt ${fmtDate(log.date)}`;
+  if (log) {
     if (log.date === today) return sessionComplete(s, log) ? "Heute · komplett" : "Heute";
-    return `Erledigt ${fmtDate(log.date)}`;
+    if (hasValues(log)) return `Nicht gespeichert · ${fmtDate(log.date)}`;
   }
   if (i === c) return "Als Nächstes";
   return i < c ? "Nicht eingetragen" : "Kommt noch";
@@ -287,11 +292,42 @@ function sessionHtml() {
     <div class="dots" id="dots" role="group" aria-label="Trainings">${dotsHtml(i)}</div>
     ${away ? `<button type="button" class="link back" data-act="home">${backTo}</button>` : ""}
     ${done ? `<p class="banner">Das war der ganze Plan. Zeit für einen neuen Test unter Fortschritt.</p>` : ""}
-    <div class="items">${s.items.map((it) => itemHtml(it, log)).join("")}</div>
-    <label class="notes">
-      <span>Notizen</span>
-      <textarea id="note" rows="2" placeholder="Wie hat es sich angefühlt? Tut etwas weh?">${esc(log?.note ?? "")}</textarea>
-    </label>`;
+    ${!log ? ghostHtml(s) : log.done ? savedHtml(s, list[i + 1]) : `
+      <div class="exbar">
+        <button type="button" class="pill" data-act="stop" data-confirm="${log.saved ? "Nochmal tippen: Änderungen weg" : "Nochmal tippen zum Verwerfen"}">${log.saved ? "Bearbeiten abbrechen" : "Training abbrechen"}</button>
+      </div>
+      <div class="items">${s.items.map((it) => itemHtml(it, log)).join("")}</div>
+      <label class="notes">
+        <span>Notizen</span>
+        <textarea id="note" rows="2" placeholder="Wie hat es sich angefühlt? Tut etwas weh?">${esc(log.note ?? "")}</textarea>
+      </label>
+      <button type="button" class="start" data-act="finish"><span>Training speichern</span><span class="knob">${TICK}</span></button>
+      <p class="formerr" id="finisherr" role="alert"></p>`}`;
+}
+
+// Not started yet: what's coming, and a button to start. Same as Yapp.
+function ghostHtml(s) {
+  return `
+    <button type="button" class="start" data-act="start"><span>Training starten</span><span class="knob">${RIGHT}</span></button>
+    <ul class="exlist">${s.items.map((it) => `<li><span>${esc(it.name)}</span>${it.sets.length ? `<small>${esc(fmtPrescription(it))}</small>` : ""}</li>`).join("")}</ul>`;
+}
+
+// Saved: a summary card instead of the fields. Bearbeiten opens them again.
+function savedHtml(s, next) {
+  const { sets, records } = sessionSummary(program.plans.flatMap(sessionsOf), state.logs, s);
+  const bits = [count(sets, "Satz", "Sätze")];
+  if (records.length) bits.push(count(records.length, "neuer Rekord", "neue Rekorde"));
+  return `
+    <section class="saved">
+      <div class="savedhead">
+        <span class="knob small">${TICK}</span>
+        <div class="savedtext"><h3>${esc(s.day)} gespeichert</h3><p>${bits.join(" · ")}</p></div>
+        <button type="button" class="pill" data-act="reopen">Bearbeiten</button>
+      </div>
+      ${records.map((r) => `<p class="savedpr"><span class="prtag">Rekord</span><span class="savedname">${esc(r.name)}</span><span class="prval">${esc(fmtVal(r.best, r.unit))}</span></p>`).join("")}
+      ${next ? `<p class="savednext">Als Nächstes: ${esc(next.week)} · ${esc(next.day)}</p>` : ""}
+    </section>
+    <button type="button" class="textbtn" data-act="delete">Training löschen</button>`;
 }
 
 const hitsOf = (it, vals) => it.sets.filter((t, j) => hit(t, vals[j] ?? null)).length;
@@ -432,6 +468,7 @@ root.addEventListener("input", (e) => {
   const el = e.target;
   if (el.id === "note") {
     const s = sessions()[shownIndex()];
+    if (!state.logs[s.key]) return;
     setNote(state, s, el.value, today);
     refreshAfterLog();
     saveSoon();
@@ -439,6 +476,7 @@ root.addEventListener("input", (e) => {
   }
   if (!el.matches(".f[data-item]")) return;
   const s = sessions()[shownIndex()];
+  if (!state.logs[s.key]) return;
   const item = s.items.find((it) => it.key === el.dataset.item);
   const j = Number(el.dataset.set);
   const v = parseNum(el.value);
@@ -496,6 +534,27 @@ root.addEventListener("submit", (e) => {
 
 /* ---------- buttons ---------- */
 
+// Throwing something away is two taps with no pop-up: the first arms the button. Same as Yapp.
+function armed(btn, label) {
+  if (btn.dataset.armed) return true;
+  const was = btn.textContent;
+  btn.dataset.armed = "1";
+  btn.textContent = label;
+  btn.classList.add("armed");
+  setTimeout(() => {
+    if (!btn.isConnected) return;
+    delete btn.dataset.armed;
+    btn.textContent = was;
+    btn.classList.remove("armed");
+  }, ARMED_MS);
+  return false;
+}
+
+// After start or delete the session on screen may have become (or stopped being) today's.
+function keepShowing(i) {
+  viewing = i === current() ? null : i;
+}
+
 function show(index) {
   flush();
   viewing = index === current() ? null : index;
@@ -545,6 +604,53 @@ root.addEventListener("click", (e) => {
   if (act === "home") {
     viewing = null;
     render();
+    return;
+  }
+  const i = shownIndex();
+  const s = sessions()[i];
+  if (act === "start") {
+    startSession(state, s, today);
+    persist();
+    keepShowing(i);
+    render();
+    // Ask the browser not to clear this site's storage when space runs low.
+    navigator.storage?.persist?.().catch(() => {});
+  } else if (act === "finish") {
+    flush();
+    const log = state.logs[s.key];
+    const before = log.saved;
+    if (!finishSession(state, s)) {
+      document.getElementById("finisherr").textContent = "Noch nichts eingetragen.";
+      return;
+    }
+    // Only say it's saved if it really is.
+    if (!persist()) {
+      log.done = false;
+      if (before) log.saved = before;
+      document.getElementById("finisherr").textContent = "Konnte nicht speichern. Versuch es nochmal.";
+      return;
+    }
+    render();
+    document.body.scrollTo(0, 0);
+  } else if (act === "reopen") {
+    reopenSession(state, s);
+    persist();
+    render();
+  } else if (act === "stop") {
+    if (!armed(btn, btn.dataset.confirm)) return;
+    flush();
+    stopSession(state, s);
+    persist();
+    keepShowing(i);
+    render();
+    document.body.scrollTo(0, 0);
+  } else if (act === "delete") {
+    if (!armed(btn, "Nochmal tippen zum Löschen")) return;
+    deleteSession(state, s);
+    persist();
+    keepShowing(i);
+    render();
+    document.body.scrollTo(0, 0);
   }
 });
 
@@ -565,6 +671,8 @@ function checkRollover() {
   if (now === today) return;
   flush();
   today = now;
+  tidyLogs(state, today);
+  persist();
   viewing = null;
   testing = null;
   render();

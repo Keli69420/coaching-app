@@ -208,7 +208,7 @@ export function sessionsOf(plan) {
 export const hasValues = (log) => Boolean(log && Object.values(log.vals || {}).some((arr) => arr.some((v) => v != null)));
 
 // Which session the app opens on:
-// 1. one he has already logged something in today (so reopening mid-workout lands there),
+// 1. one he started today (so reopening mid-workout or after saving lands there),
 // 2. otherwise the one after the furthest session he has logged anything in (so a skipped
 //    day doesn't pin the app to it forever),
 // 3. otherwise the first one.
@@ -218,9 +218,8 @@ export function currentIndex(sessions, logs, today) {
   let furthest = -1;
   sessions.forEach((s, i) => {
     const log = logs[s.key];
-    if (!hasValues(log)) return;
-    furthest = i;
-    if (log.date === today) todays = i;
+    if (log?.date === today) todays = i;
+    if (hasValues(log)) furthest = i;
   });
   if (todays >= 0) return todays;
   if (furthest < 0) return 0;
@@ -335,6 +334,14 @@ export function emptyState() {
 }
 
 // Reads whatever was saved, keeps what makes sense, drops the rest.
+function cleanLog(log) {
+  const vals = {};
+  for (const [ik, arr] of Object.entries(log.vals || {})) {
+    if (Array.isArray(arr)) vals[ik] = arr.map((v) => (Number.isFinite(v) ? v : null));
+  }
+  return { date: typeof log.date === "string" ? log.date : null, vals, note: typeof log.note === "string" ? log.note : "" };
+}
+
 export function cleanState(raw) {
   const s = emptyState();
   if (!raw || typeof raw !== "object") return s;
@@ -342,11 +349,9 @@ export function cleanState(raw) {
   if (raw.logs && typeof raw.logs === "object") {
     for (const [k, log] of Object.entries(raw.logs)) {
       if (!log || typeof log !== "object") continue;
-      const vals = {};
-      for (const [ik, arr] of Object.entries(log.vals || {})) {
-        if (Array.isArray(arr)) vals[ik] = arr.map((v) => (Number.isFinite(v) ? v : null));
-      }
-      s.logs[k] = { date: typeof log.date === "string" ? log.date : null, vals, note: typeof log.note === "string" ? log.note : "" };
+      s.logs[k] = cleanLog(log);
+      if (log.done === true) s.logs[k].done = true;
+      if (log.saved && typeof log.saved === "object") s.logs[k].saved = cleanLog(log.saved);
     }
   }
   if (raw.tests && typeof raw.tests === "object") {
@@ -369,7 +374,6 @@ export function setValue(state, session, itemKey, setIndex, value, today) {
   while (arr.length < size) arr.push(null);
   arr[setIndex] = value;
   if (!log.date && value != null) log.date = today;
-  if (!hasValues(log) && !log.note) delete state.logs[session.key];
   return state;
 }
 
@@ -377,7 +381,58 @@ export function setNote(state, session, text, today) {
   const log = state.logs[session.key] || (state.logs[session.key] = { date: null, vals: {}, note: "" });
   log.note = text;
   if (!log.date && text.trim()) log.date = today;
-  if (!hasValues(log) && !log.note) delete state.logs[session.key];
+  return state;
+}
+
+/* ---------- start, save, edit: same flow as Yapp ---------- */
+
+const copyLog = (log) => ({ date: log.date, vals: JSON.parse(JSON.stringify(log.vals || {})), note: log.note || "" });
+
+// Start: an empty log dated today. A session's date is the day he started it.
+export function startSession(state, session, today) {
+  if (!state.logs[session.key]) state.logs[session.key] = { date: today, vals: {}, note: "" };
+  return state;
+}
+
+// Save: only with at least one number in it. Returns false when there's nothing to save.
+export function finishSession(state, session) {
+  const log = state.logs[session.key];
+  if (!hasValues(log)) return false;
+  log.done = true;
+  delete log.saved;
+  return true;
+}
+
+// Edit a saved session: keep a copy, so stopping the edit puts the saved one back.
+export function reopenSession(state, session) {
+  const log = state.logs[session.key];
+  if (!log) return state;
+  log.saved = log.saved || copyLog(log);
+  log.done = false;
+  return state;
+}
+
+// Stop: an edit goes back to what was saved, a new session is thrown away.
+export function stopSession(state, session) {
+  const log = state.logs[session.key];
+  if (log?.saved) state.logs[session.key] = { ...copyLog(log.saved), done: true };
+  else delete state.logs[session.key];
+  return state;
+}
+
+export function deleteSession(state, session) {
+  delete state.logs[session.key];
+  return state;
+}
+
+// On opening and when the day changes: a session started on an earlier day with nothing
+// typed in it is dropped, and an edit that was emptied falls back to what was saved.
+export function tidyLogs(state, today) {
+  for (const [k, log] of Object.entries(state.logs)) {
+    if (hasValues(log)) continue;
+    if (log.saved) state.logs[k] = { ...copyLog(log.saved), done: true };
+    else if (log.date !== today && !log.note) delete state.logs[k];
+  }
   return state;
 }
 
@@ -475,4 +530,33 @@ export function sparkPoints(weekly, w, h, pad) {
     const y = hi === lo ? h / 2 : pad + ((hi - v) / (hi - lo)) * (h - 2 * pad);
     return [{ i, x: +(pad + i * step).toFixed(1), y: +y.toFixed(1) }];
   });
+}
+
+// What the saved card says: sets typed, and new records. A record has to beat every earlier
+// day for that exercise, so a first time isn't one, and neither is a tie. Same as Yapp.
+export function sessionSummary(sessions, logs, session) {
+  const log = logs?.[session.key];
+  let sets = 0;
+  const now = new Map();
+  for (const it of session.items) {
+    const vals = filled(log?.vals?.[it.key]);
+    sets += vals.length;
+    if (!it.sets.length || !vals.length) continue;
+    const k = `${keyOf(it.name)}|${it.unit}`;
+    const best = Math.max(...vals);
+    if (!now.has(k) || best > now.get(k).best) now.set(k, { name: it.name, unit: it.unit, best });
+  }
+  const before = new Map();
+  for (const s of sessions) {
+    const other = logs?.[s.key];
+    if (!other?.date || !log?.date || other.date >= log.date) continue;
+    for (const it of s.items) {
+      const vals = filled(other.vals?.[it.key]);
+      if (!vals.length) continue;
+      const k = `${keyOf(it.name)}|${it.unit}`;
+      before.set(k, Math.max(before.get(k) ?? -Infinity, ...vals));
+    }
+  }
+  const records = [...now.entries()].filter(([k, r]) => before.has(k) && r.best > before.get(k)).map(([, r]) => r);
+  return { sets, records };
 }

@@ -5,6 +5,7 @@ import {
   parseTarget, parsePrescription, parsePlan, sessionsOf, currentIndex, planDone, sessionComplete,
   hit, fmtPrescription, ladderState, stepHistory, parseNum, emptyState, cleanState, setValue, setNote, setTest, keyOf, hasValues,
   weekStart, weeksAgo, weeksAgoLabel, weeklyTotals, exerciseStats, sparkPoints, fmtVal,
+  startSession, finishSession, reopenSession, stopSession, deleteSession, tidyLogs, sessionSummary,
 } from "../logic.js";
 
 const DEMO = readFileSync(new URL("./fixtures/demo.md", import.meta.url), "utf8");
@@ -122,14 +123,74 @@ test("fixing an old session today doesn't make it today's", () => {
 test("a session with only blank fields or a note doesn't count as done", () => {
   const s = plan();
   const state = emptyState();
+  startSession(state, s[0], "2026-11-14");
   setValue(state, s[0], "pull-ups", 0, 6, "2026-11-14");
   setValue(state, s[0], "pull-ups", 0, null, "2026-11-14");
-  assert.equal(state.logs[s[0].key], undefined, "emptied log is removed");
+  assert.ok(state.logs[s[0].key], "a started session stays while he's in it, even emptied");
   setNote(state, s[0], "elbow sore", "2026-11-14");
   assert.equal(hasValues(state.logs[s[0].key]), false);
   assert.equal(currentIndex(s, state.logs, "2026-11-15"), 0);
-  setNote(state, s[0], "", "2026-11-14");
+});
+
+test("start, save, edit, stop: same flow as Yapp", () => {
+  const s = plan();
+  const state = emptyState();
+  startSession(state, s[1], "2026-11-14");
+  assert.deepEqual(state.logs[s[1].key], { date: "2026-11-14", vals: {}, note: "" });
+  assert.equal(currentIndex(s, state.logs, "2026-11-14"), 1, "a session started today opens, even empty");
+  assert.equal(finishSession(state, s[1]), false, "nothing to save yet");
+  setValue(state, s[1], "pull-ups", 0, 5, "2026-11-14");
+  assert.equal(finishSession(state, s[1]), true);
+  assert.equal(state.logs[s[1].key].done, true);
+  reopenSession(state, s[1]);
+  assert.equal(state.logs[s[1].key].done, false);
+  setValue(state, s[1], "pull-ups", 0, 9, "2026-11-14");
+  stopSession(state, s[1]);
+  assert.equal(state.logs[s[1].key].vals["pull-ups"][0], 5, "stopping an edit puts the saved numbers back");
+  assert.equal(state.logs[s[1].key].done, true);
+  assert.equal(state.logs[s[1].key].saved, undefined);
+  startSession(state, s[2], "2026-11-14");
+  stopSession(state, s[2]);
+  assert.equal(state.logs[s[2].key], undefined, "stopping a new session throws it away");
+  deleteSession(state, s[1]);
+  assert.deepEqual(state.logs, {});
+});
+
+test("tidy: an empty start from an earlier day goes, an emptied edit falls back to the save", () => {
+  const s = plan();
+  const state = emptyState();
+  startSession(state, s[0], "2026-11-13");
+  startSession(state, s[1], "2026-11-14");
+  startSession(state, s[2], "2026-11-14");
+  setValue(state, s[2], "pull-ups", 0, 4, "2026-11-14");
+  finishSession(state, s[2]);
+  reopenSession(state, s[2]);
+  setValue(state, s[2], "pull-ups", 0, null, "2026-11-14");
+  tidyLogs(state, "2026-11-14");
   assert.equal(state.logs[s[0].key], undefined);
+  assert.ok(state.logs[s[1].key], "today's empty start stays");
+  assert.equal(state.logs[s[2].key].vals["pull-ups"][0], 4);
+  assert.equal(state.logs[s[2].key].done, true);
+});
+
+test("saved state keeps done and the copy under edit", () => {
+  const s = cleanState({ logs: { a: { date: "2026-11-14", vals: { x: [1] }, note: "", done: true }, b: { date: "2026-11-14", vals: {}, note: "", saved: { date: "2026-11-13", vals: { x: [2] }, note: "n" } } } });
+  assert.equal(s.logs.a.done, true);
+  assert.deepEqual(s.logs.b.saved, { date: "2026-11-13", vals: { x: [2] }, note: "n" });
+  assert.equal(cleanState({ logs: { a: { date: "x", vals: {}, done: "yes" } } }).logs.a.done, undefined);
+});
+
+test("saved card: sets typed, records only when an earlier day is beaten", () => {
+  const ss = sessionsOf(TWO_DAYS.plans[0]);
+  const st = emptyState();
+  startSession(st, ss[0], "2026-11-10");
+  setValue(st, ss[0], "liegestütze", 0, 6, "2026-11-10");
+  setValue(st, ss[0], "halten", 0, 20, "2026-11-10");
+  startSession(st, ss[1], "2026-11-12");
+  setValue(st, ss[1], "liegestütze", 0, 8, "2026-11-12");
+  setValue(st, ss[1], "liegestütze", 1, 7, "2026-11-12");
+  assert.deepEqual(sessionSummary(ss, st.logs, ss[0]), { sets: 2, records: [] }, "a first time isn't a record");
+  assert.deepEqual(sessionSummary(ss, st.logs, ss[1]), { sets: 2, records: [{ name: "Liegestütze", unit: "reps", best: 8 }] });
 });
 
 test("complete means every field filled; reminders don't count", () => {
