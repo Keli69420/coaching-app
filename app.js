@@ -95,7 +95,7 @@ function ticks(share, size, n, len) {
 // Each exercise card, and its line in the list before Start, gets one of these colours in turn.
 const HUES = 5;
 
-// A value with its number in dot-matrix and the unit in plain type: "22 s", "6 Wdh.".
+// A value with its number set apart from a smaller unit: "22 s", "6 Wdh.".
 const numHtml = (n, unit) => `<b class="num">${esc(n)}</b><small class="unit">${unit === "sec" ? "s" : "Wdh."}</small>`;
 
 const plan = () => program?.plans.find((p) => p.id === state.plan) ?? null;

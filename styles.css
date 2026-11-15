@@ -1,7 +1,7 @@
 /* Black glass, after the reference shots Keli sent (14 Nov): near-black ground with a faint
    dot grid, frosted dark cards, and saturated glowing cards in violet, pink, blue, teal and
-   orange. Big numbers are dot-matrix (Doto, round dots), dials are rings of ticks, and the
-   text is thin and geometric (Outfit). Same layout as before. */
+   orange. Dials are rings of ticks, and all text, numbers included, is thin and geometric
+   (Outfit). Same layout as before. Keli dropped the dot-matrix numbers on 15 Nov. */
 :root {
   --bg: #050506;
   --ink: #F5F5F7;
@@ -28,7 +28,6 @@
   --bad: #FF6B6B;
 
   --font: "Outfit", -apple-system, "Segoe UI", Roboto, sans-serif;
-  --dots: "Doto", "Outfit", ui-monospace, monospace;
   color-scheme: dark;
 }
 
@@ -53,10 +52,13 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 h1, h2, h3, p { margin: 0; }
 .defs { position: absolute; width: 0; height: 0; overflow: hidden; }
 
-/* Dot-matrix numbers. ROND 100 makes every dot round. */
+/* Numbers: same font as the text, digits of equal width so they don't jump. The big ones
+   are light like the session title, the small ones a touch heavier to stay readable. */
 .val b, .tbig b, .big, .num, .test .f, .set .f {
-  font-family: var(--dots); font-variation-settings: "ROND" 100; font-weight: 700;
+  font-family: var(--font); font-variant-numeric: tabular-nums; letter-spacing: -.02em;
 }
+.tbig b, .big, .val b { font-weight: 300; }
+.num, .test .f, .set .f { font-weight: 500; }
 
 /* One colour per exercise card, per day of the week on the dots. */
 .hue0 { --c1: var(--violet); --c2: var(--violet-deep); }
@@ -102,7 +104,7 @@ h1, h2, h3, p { margin: 0; }
 .gauge .ticks line { stroke-width: 1.7; }
 .gauge.later .ticks .on { stroke: rgba(255, 255, 255, .7); }
 .val { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-.val b { font-size: 31px; line-height: 1; letter-spacing: .02em; }
+.val b { font-size: 31px; line-height: 1; }
 .val b.none { color: rgba(255, 255, 255, .35); }
 .val small { margin-top: 4px; font-size: 12px; color: rgba(255, 255, 255, .7); }
 .gname { display: flex; align-items: center; gap: 4px; font: 500 13px/1.15 var(--font); overflow-wrap: anywhere; text-align: center; }

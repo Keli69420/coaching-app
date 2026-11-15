@@ -39,8 +39,8 @@ Extra Liegestütze an freien Tagen sind willkommen: 2 lockere Sätze, nie bis zu
 ### Legs
 Aufwärmen 5 Min: 20 Kniebeugen ohne Gewicht, Beinschwingen, 10 Ausfallschritte pro Bein. 90 s Pause zwischen den Sätzen.
 Nimm ein Gewicht, bei dem die letzten 2 Wiederholungen schwer, aber sauber sind. Schreib das Gewicht ins Notizfeld.
-- Squat: 3 x 8 | Hüfte tiefer als die Knie
-- Deadlift: 3 x 8 | Hüfte nach hinten, Rücken gerade
+- Squat: 3 x 8 | Langhantel, Hüfte tiefer als die Knie
+- Deadlift: 3 x 8 | Langhantel, Hüfte nach hinten, Rücken gerade
 - Bulgarian Split Squat: 3 x 6 | pro Bein, hinterer Fuss auf einer Bank
 - Calf Raises: 3 x 12 | auf einer Stufe, unten ganz dehnen
 
@@ -63,8 +63,8 @@ Aufwärmen mit Keli. 2 bis 3 Min Pause zwischen den Klimmzug-Sätzen: saubere Wi
 
 ### Legs
 90 s Pause zwischen den Sätzen. Saubere Wiederholungen, dann etwas schwerer.
-- Squat: 3 x 10
-- Deadlift: 3 x 10
+- Squat: 3 x 10 | Langhantel
+- Deadlift: 3 x 10 | Langhantel
 - Bulgarian Split Squat: 3 x 8 | pro Bein
 - Calf Raises: 3 x 15
 
@@ -87,8 +87,8 @@ Aufwärmen mit Keli. 2 bis 3 Min Pause zwischen den Klimmzug-Sätzen.
 
 ### Legs
 90 s Pause zwischen den Sätzen. Saubere Wiederholungen, dann etwas schwerer.
-- Squat: 3 x 12
-- Deadlift: 3 x 12
+- Squat: 3 x 12 | Langhantel
+- Deadlift: 3 x 12 | Langhantel
 - Bulgarian Split Squat: 3 x 10 | pro Bein
 - Calf Raises: 3 x 20
 
@@ -111,8 +111,8 @@ Aufwärmen mit Keli. 2 bis 3 Min Pause zwischen den Klimmzug-Sätzen.
 
 ### Legs
 90 s Pause zwischen den Sätzen. Saubere Wiederholungen, dann etwas schwerer.
-- Squat: 3 x 8 | schwerer als in Woche 1
-- Deadlift: 3 x 8 | schwerer als in Woche 1
+- Squat: 3 x 8 | Langhantel, schwerer als in Woche 1
+- Deadlift: 3 x 8 | Langhantel, schwerer als in Woche 1
 - Bulgarian Split Squat: 3 x 8 | pro Bein
 - Calf Raises: 3 x 15
 
