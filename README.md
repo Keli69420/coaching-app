@@ -1,8 +1,8 @@
-# Coaching app (name to come)
+# Pathletics
 
 Two tabs for a client training toward a goal, switched at the bottom like Yapp.
 
-**The look** (14 Nov, from reference shots Keli sent): near-black with a faint dot grid, frosted dark cards, saturated glow cards (violet, pink, blue, teal, orange), dials as rings of ticks, thin geometric text and numbers (Outfit; the dot-matrix numbers went on 15 Nov, Keli didn't like them).
+**The look** (14 Nov, from reference shots Keli sent; the name with fading copies above and below it in the header and on the icon since 17 Nov, after a "FOCUS" shot): near-black with a faint dot grid, frosted dark cards, saturated glow cards (violet, pink, blue, teal, orange), dials as rings of ticks, thin geometric text and numbers (Outfit; the dot-matrix numbers went on 15 Nov, Keli didn't like them).
 
 - **Training** (opens here): **today's session** from the coach's plan, nothing else. A dot per session for the whole plan. Like Yapp, he **starts** the session (until then it's a list of what's coming and a Start button), types into one card per exercise with a disc per set, and **saves** it. Each exercise card has its own colour (violet, pink, blue, teal, orange); a hit set turns white and the card glows brighter in its colour as sets get hit. Saved, the session is a summary card (sets, new records, what's next) with Bearbeiten to change it and "Training löschen" (two taps) to remove it.
 - **Fortschritt**: the **ladder** as three tiles with a tick dial each, showing how close he is (for the first client: pull-ups → chest-to-bar → muscle-up) and a trend card for the step he's on; tap a dial to type a test. Below it, like Yapp's Progress page: this week's trainings and sets against last week, sets per week as columns of dots, and one card per exercise with his record, this week against the last week he did it, and a line of his best per week.
@@ -77,7 +77,7 @@ It prints every plan as the app will read it and refuses typos with a line numbe
 | The screen | `app.js` |
 | Colours, fonts | top of `styles.css` |
 | App name | `index.html` (title, apple-mobile-web-app-title, h1) and `manifest.webmanifest` |
-| Icon | `tools/make_icon.py` writes `icon-180.png`, `icon-512.png`, `icon.svg` |
+| Icon | `tools/icon.html` draws it, `python3 -I tools/make_icon.py` saves `icon-180.png` and `icon-512.png` (open the link it prints) |
 
 **Before pushing:**
 

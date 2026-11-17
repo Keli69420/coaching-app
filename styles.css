@@ -73,16 +73,16 @@ h1, h2, h3, p { margin: 0; }
 .ticks .off { stroke: rgba(255, 255, 255, .2); }
 .ticks .on { stroke: #fff; }
 
-/* ---------- the top: a plain header, and on Fortschritt the dials and trend ---------- */
+/* ---------- the top: the name, and on Fortschritt the dials and trend ---------- */
 .sheet { margin-top: 6px; }
-.top { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; height: 56px; }
-.mark {
-  display: grid; place-items: center; justify-self: start; width: 44px; height: 44px; border-radius: 50%;
-  background: var(--frost); box-shadow: var(--frost-shine); border: 1px solid var(--glass-line); color: var(--ink);
+.top { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; height: 72px; }
+/* The name with fading copies above and below it, like the "FOCUS" shot Keli sent (17 Nov).
+   The same echo is drawn on the icon by tools/icon.html: keep the two in step. */
+.top h1 {
+  grid-column: 2; font: 700 20px/1 var(--font); letter-spacing: .06em; text-transform: uppercase; color: var(--ink);
+  text-shadow: 0 -.24em 0 #8E8E93, 0 .24em 0 #8E8E93, 0 -.48em 0 #4A4A4F, 0 .48em 0 #4A4A4F, 0 -.72em 0 #222225, 0 .72em 0 #222225;
 }
-.mark svg { width: 18px; height: 18px; fill: currentColor; }
-.top h1 { font: 400 22px/1 var(--font); letter-spacing: .005em; }
-.chipslot { justify-self: end; }
+.chipslot { grid-column: 3; justify-self: end; }
 .chip { display: inline-flex; align-items: center; gap: 4px; height: 40px; padding: 0 15px; border-radius: 999px; background: var(--glass); border: 1px solid var(--glass-line); font-size: 14px; color: var(--ink-2); }
 .chip b { font-weight: 600; color: var(--ink); }
 .chip.on { background: var(--ink); color: var(--bg); }

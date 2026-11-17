@@ -1,6 +1,6 @@
 {
-  "name": "Untitled",
-  "short_name": "Untitled",
+  "name": "Pathletics",
+  "short_name": "Pathletics",
   "description": "Dein Training von heute und wie weit du schon bist.",
   "lang": "de",
   "start_url": "./",
@@ -10,7 +10,6 @@
   "theme_color": "#050506",
   "icons": [
     { "src": "icon-180.png", "sizes": "180x180", "type": "image/png" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
-    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
   ]
 }

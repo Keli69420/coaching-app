@@ -2,8 +2,8 @@
 // changed plan reaches the phone the next time it opens with signal, and falls back to
 // the saved copy after 1.5 s so a bad gym signal can't hang it. Proven on Yapp.
 // Only the page's own files and fonts pass through here. The client's logs never do.
-const CACHE = "coach-v1";
-const SHELL = ["./", "./index.html", "./styles.css", "./logic.js", "./app.js", "./plans/muscle-up.md", "./manifest.webmanifest", "./icon.svg", "./icon-180.png"];
+const CACHE = "coach-v2";
+const SHELL = ["./", "./index.html", "./styles.css", "./logic.js", "./app.js", "./plans/muscle-up.md", "./manifest.webmanifest", "./icon-180.png"];
 const TIMEOUT_MS = 1500;
 const FONT_HOSTS = ["fonts.googleapis.com", "fonts.gstatic.com"];
 

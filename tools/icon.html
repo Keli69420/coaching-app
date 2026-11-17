@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Pathletics icon</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@700&display=block">
+  <style>
+    body { background: #333; color: #ddd; font: 14px/1.4 system-ui, sans-serif; padding: 20px; }
+    canvas { display: block; margin: 12px 0; border-radius: 22%; }
+  </style>
+</head>
+<body>
+  <p id="msg">Drawing…</p>
+  <div id="out"></div>
+  <script type="module">
+    // The app icon: the name with fading copies above and below it, like the header
+    // (Keli, 17 Nov, after a "FOCUS" shot he sent). Keep these numbers in step with
+    // `.top h1` in styles.css. Run through tools/make_icon.py, which saves the PNGs.
+    const NAME = "PATHLETICS";
+    const BG = "#050506";
+    const MAIN = "#F5F5F7";
+    const ECHOES = ["#8E8E93", "#4A4A4F", "#222225"]; // nearest copy first
+    const WIDTH = 0.8;  // share of the icon the name spans
+    const STEP = 0.24;  // how far each copy sits from the last, in font sizes
+    const TRACK = 0.06; // letter spacing, in font sizes
+
+    function draw(size) {
+      const c = document.createElement("canvas");
+      c.width = c.height = size;
+      const g = c.getContext("2d");
+      g.fillStyle = BG;
+      g.fillRect(0, 0, size, size);
+
+      const setFont = (fs) => { g.font = `700 ${fs}px Outfit`; g.letterSpacing = `${TRACK * fs}px`; };
+      setFont(100);
+      let m = g.measureText(NAME);
+      const fs = (100 * size * WIDTH) / (m.actualBoundingBoxLeft + m.actualBoundingBoxRight);
+      setFont(fs);
+      m = g.measureText(NAME);
+
+      // Centre the ink, not the advance (letter spacing adds a gap after the last letter).
+      const x = size / 2 + (m.actualBoundingBoxLeft - m.actualBoundingBoxRight) / 2;
+      const y = size / 2 + m.actualBoundingBoxAscent / 2; // capitals only, no descenders
+      for (let k = ECHOES.length; k >= 1; k--) {
+        g.fillStyle = ECHOES[k - 1];
+        g.fillText(NAME, x, y - k * STEP * fs);
+        g.fillText(NAME, x, y + k * STEP * fs);
+      }
+      g.fillStyle = MAIN;
+      g.fillText(NAME, x, y);
+      return c;
+    }
+
+    const msg = document.getElementById("msg");
+    await document.fonts.load("700 100px Outfit");
+    if (!document.fonts.check("700 100px Outfit")) {
+      msg.textContent = "Outfit didn't load: needs a connection to Google Fonts.";
+      throw new Error("no font");
+    }
+    const lines = [];
+    for (const size of [512, 180]) {
+      const c = draw(size);
+      document.getElementById("out").append(c);
+      const blob = await new Promise((r) => c.toBlob(r, "image/png"));
+      const name = `icon-${size}.png`;
+      const res = await fetch(`/save/${name}`, { method: "POST", body: blob }).catch(() => null);
+      lines.push(res?.ok ? `saved ${name}` : `${name}: not saved (open this through tools/make_icon.py)`);
+    }
+    msg.textContent = lines.join(" · ");
+  </script>
+</body>
+</html>
