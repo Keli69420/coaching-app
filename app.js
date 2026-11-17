@@ -199,7 +199,7 @@ function ghostHtml(s) {
 function activeHtml(s, log) {
   return `
     <div class="items">${s.items.map((it) => itemHtml(it, log)).join("")}</div>
-    <textarea class="card note" id="note" rows="2" placeholder="How did it feel? Anything hurt?" aria-label="Notes">${esc(log.note ?? "")}</textarea>
+    <textarea class="card note" id="note" rows="2" placeholder="Notes" aria-label="Notes">${esc(log.note ?? "")}</textarea>
     <button type="button" class="cta" data-act="finish">Save workout</button>
     <p class="formerr" id="finisherr" role="alert"></p>
     <button type="button" class="quiet" data-act="stop" data-confirm="${log.saved ? "Tap again to undo edits" : "Tap again to discard"}">${log.saved ? "Stop editing" : "Stop workout"}</button>`;
