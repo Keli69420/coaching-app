@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   parseTarget, parsePrescription, parsePlan, sessionsOf, currentIndex, planDone, sessionComplete,
   hit, fmtPrescription, ladderState, stepHistory, parseNum, emptyState, cleanState, setValue, setNote, setTest, keyOf, hasValues,
-  weekStart, weeksAgo, weeksAgoLabel, weeklyTotals, exerciseStats, sparkPoints, fmtVal,
+  weekStart, weeksAgo, weeksAgoLabel, weeklyTotals, exerciseStats, sparkPoints, fmtVal, fmtDate,
   startSession, finishSession, reopenSession, stopSession, deleteSession, tidyLogs, sessionSummary,
 } from "../logic.js";
 
@@ -31,10 +31,10 @@ test("prescriptions", () => {
   assert.equal(parsePrescription("3X max").sets[0].min, null);
   assert.deepEqual(parsePrescription("5, 4, 3").sets.map((s) => s.min), [5, 4, 3]);
   assert.deepEqual(parsePrescription("20s / 15s").sets.map((s) => s.min), [20, 15]);
-  assert.match(parsePrescription("3 x 8kg"), /nicht lesen/);
-  assert.match(parsePrescription("21 x 5"), /zwischen 1 und 20/);
-  assert.match(parsePrescription("5, 20s"), /mischt/);
-  assert.match(parsePrescription("3 x ?"), /nicht lesen/);
+  assert.match(parsePrescription("3 x 8kg"), /can't read/);
+  assert.match(parsePrescription("21 x 5"), /between 1 and 20/);
+  assert.match(parsePrescription("5, 20s"), /mixes/);
+  assert.match(parsePrescription("3 x ?"), /can't read/);
 });
 
 test("the demo file reads without errors", () => {
@@ -56,24 +56,24 @@ test("the demo file reads without errors", () => {
 
 test("comments and front matter keep line numbers right", () => {
   const p = parsePlan("---\na: 1\n---\n%%\nx\n%%\n# Plan A\n## Week 1\n### Day 1\n- Pull-ups: 3 x ?\n");
-  assert.deepEqual(p.errors, [{ line: 10, msg: 'Pull-ups: kann "?" nicht lesen' }, { line: 9, msg: '"Day 1" in Plan A hat keine Übungen' }]);
+  assert.deepEqual(p.errors, [{ line: 10, msg: 'Pull-ups: can\'t read "?"' }, { line: 9, msg: '"Day 1" in Plan A has no exercises' }]);
 });
 
 test("the errors Keli is likely to make are caught with a line number", () => {
   const cases = [
-    ["# Plan A\n- Pull-ups: 3 x 8", "unter einem ### Tag"],
-    ["# Plan A\n### Day 1", "unter einer ## Woche"],
-    ["## Week 1", "unter einem # Plan"],
-    ["# Planner", 'muss "# Ladder"'],
-    ["# Ladder\n- Pull-ups: ?\n# Plan A\n## W\n### D\n- X: 1 x 1", "Stufe der Leiter heisst"],
-    ["# Ladder\n- Pull-ups: 5-8\n# Plan A\n## W\n### D\n- X: 1 x 1", "eine Zahl, keinen Bereich"],
-    ["# Ladder\nPull-ups 10\n# Plan A\n## W\n### D\n- X: 1 x 1", "unter # Ladder"],
-    ["# Plan A\n## W\n### D\n- X: 1 x 1\n# Plan A\n## W\n### D\n- X: 1 x 1", "zweimal Plan A"],
-    ["# Plan A\n## W\n### D\n- X: 1 x 1\n### D\n- X: 1 x 1", "kommt in W zweimal vor"],
-    ["# Plan A\n## W\n### D\n- : 3 x 8", "braucht einen Namen"],
-    ["# Plan A\n## W\n### D\n#### Warm-up\n- X: 1 x 1", "#, ## und ###"],
-    ["# Plan A\n## W", "keine Tage"],
-    ["- X: 1 x 1", "kein # Plan"],
+    ["# Plan A\n- Pull-ups: 3 x 8", "under a ### day"],
+    ["# Plan A\n### Day 1", "under a ## week"],
+    ["## Week 1", "under a # Plan"],
+    ["# Planner", 'has to be "# Ladder"'],
+    ["# Ladder\n- Pull-ups: ?\n# Plan A\n## W\n### D\n- X: 1 x 1", "a ladder step is"],
+    ["# Ladder\n- Pull-ups: 5-8\n# Plan A\n## W\n### D\n- X: 1 x 1", "one number, not a range"],
+    ["# Ladder\nPull-ups 10\n# Plan A\n## W\n### D\n- X: 1 x 1", "under # Ladder"],
+    ["# Plan A\n## W\n### D\n- X: 1 x 1\n# Plan A\n## W\n### D\n- X: 1 x 1", "Plan A twice"],
+    ["# Plan A\n## W\n### D\n- X: 1 x 1\n### D\n- X: 1 x 1", "is in W twice"],
+    ["# Plan A\n## W\n### D\n- : 3 x 8", "needs a name"],
+    ["# Plan A\n## W\n### D\n#### Warm-up\n- X: 1 x 1", "#, ## and ###"],
+    ["# Plan A\n## W", "has no days"],
+    ["- X: 1 x 1", "no # Plan"],
   ];
   for (const [text, want] of cases) {
     const { errors } = parsePlan(text);
@@ -298,9 +298,11 @@ test("weeks run Monday to Sunday", () => {
   assert.equal(weeksAgo("2026-11-15", "2026-11-16"), 1);
   assert.equal(weeksAgo("2026-11-16", "2026-11-22"), 0);
   assert.equal(weeksAgo("2026-12-30", "2027-01-04"), 1); // across new year
-  assert.deepEqual([0, 1, 3].map(weeksAgoLabel), ["diese Woche", "letzte Woche", "vor 3 Wochen"]);
+  assert.deepEqual([0, 1, 3].map(weeksAgoLabel), ["this week", "last week", "3 weeks ago"]);
   assert.equal(fmtVal(20, "sec"), "20 s");
-  assert.equal(fmtVal(6, "reps"), "6 Wdh.");
+  assert.equal(fmtVal(6, "reps"), "6 reps");
+  assert.equal(fmtDate("2026-11-07"), "7 Nov");
+  assert.equal(fmtDate("2027-01-14"), "14 Jan");
 });
 
 test("weekly totals count trainings with a number in them, and their filled sets", () => {

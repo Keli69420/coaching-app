@@ -14,7 +14,7 @@
 //   Plain line under a heading    a note shown with that plan, week or day
 // Obsidian comments (%% ... %%), HTML comments and front matter are ignored.
 
-// German too: the client and the coach write the plan in German.
+// German units are read too: the plan was written in German until 17 Nov.
 const SECONDS = /^(s|sec|secs|second|seconds|sek|sekunde|sekunden)$/i;
 const REPS = /^(reps?|wdh|wiederholung|wiederholungen)$/i;
 
@@ -47,23 +47,23 @@ export function parsePrescription(text) {
   let targets;
   if (many) {
     const n = Number(many[1]);
-    if (n < 1 || n > 20) return "die Anzahl Sätze muss zwischen 1 und 20 liegen";
+    if (n < 1 || n > 20) return "the number of sets has to be between 1 and 20";
     const one = parseTarget(many[2]);
-    if (!one) return `kann "${many[2].trim()}" nicht lesen`;
+    if (!one) return `can't read "${many[2].trim()}"`;
     targets = Array.from({ length: n }, () => ({ ...one }));
   } else {
     const parts = t.split(/\s*[,/]\s*/).filter(Boolean);
-    if (!parts.length) return "nach dem Doppelpunkt steht nichts";
+    if (!parts.length) return "nothing after the colon";
     targets = [];
     for (const p of parts) {
       const one = parseTarget(p);
-      if (!one) return `kann "${p}" nicht lesen`;
+      if (!one) return `can't read "${p}"`;
       targets.push(one);
     }
-    if (targets.length > 20) return "mehr als 20 Sätze";
+    if (targets.length > 20) return "more than 20 sets";
   }
   const unit = targets[0].unit;
-  if (targets.some((x) => x.unit !== unit)) return "mischt Wiederholungen und Sekunden";
+  if (targets.some((x) => x.unit !== unit)) return "mixes reps and seconds";
   return { unit, sets: targets.map(({ min, max }) => ({ min, max })) };
 }
 
@@ -99,15 +99,15 @@ export function parsePlan(text) {
       week = day = null;
       const title = m[1].trim();
       if (/^ladder$/i.test(title)) {
-        if (section === "ladder" || ladder.length) err(line, "zweimal # Ladder");
+        if (section === "ladder" || ladder.length) err(line, "# Ladder twice");
         section = "ladder";
         plan = null;
         return;
       }
       const p = title.match(/^plan\s+([a-z0-9]{1,3})\s*(?:[:—–-]\s*(.*))?$/i);
-      if (!p) { err(line, `"# ${title}" muss "# Ladder" oder "# Plan A: für wen" heissen`); section = null; plan = null; return; }
+      if (!p) { err(line, `"# ${title}" has to be "# Ladder" or "# Plan A: who it's for"`); section = null; plan = null; return; }
       const id = p[1].toUpperCase();
-      if (plans.some((x) => x.id === id)) err(line, `zweimal Plan ${id}`);
+      if (plans.some((x) => x.id === id)) err(line, `Plan ${id} twice`);
       plan = { id, title: (p[2] || "").trim(), notes: [], weeks: [] };
       plans.push(plan);
       section = "plan";
@@ -116,9 +116,9 @@ export function parsePlan(text) {
 
     m = s.match(/^##\s+(.+)$/);
     if (m && !s.startsWith("###")) {
-      if (!plan) { err(line, "eine ## Woche muss unter einem # Plan stehen"); return; }
+      if (!plan) { err(line, "a ## week has to be under a # Plan"); return; }
       const title = m[1].trim();
-      if (plan.weeks.some((w) => keyOf(w.title) === keyOf(title))) err(line, `"${title}" kommt in Plan ${plan.id} zweimal vor`);
+      if (plan.weeks.some((w) => keyOf(w.title) === keyOf(title))) err(line, `"${title}" is in Plan ${plan.id} twice`);
       week = { title, notes: [], days: [] };
       plan.weeks.push(week);
       day = null;
@@ -127,15 +127,15 @@ export function parsePlan(text) {
 
     m = s.match(/^###\s+(.+)$/);
     if (m && !s.startsWith("####")) {
-      if (!week) { err(line, "ein ### Tag muss unter einer ## Woche stehen"); return; }
+      if (!week) { err(line, "a ### day has to be under a ## week"); return; }
       const title = m[1].trim();
-      if (week.days.some((d) => keyOf(d.title) === keyOf(title))) err(line, `"${title}" kommt in ${week.title} zweimal vor`);
+      if (week.days.some((d) => keyOf(d.title) === keyOf(title))) err(line, `"${title}" is in ${week.title} twice`);
       day = { title, notes: [], items: [], line };
       week.days.push(day);
       return;
     }
 
-    if (/^#/.test(s)) { err(line, "es gibt nur Überschriften mit #, ## und ###"); return; }
+    if (/^#/.test(s)) { err(line, "headings only go #, ## and ###"); return; }
 
     m = s.match(/^[-*+]\s+(.*)$/);
     if (m) {
@@ -143,25 +143,25 @@ export function parsePlan(text) {
       if (section === "ladder") {
         const r = body.match(/^([^:|]+):\s*(.+)$/);
         const target = r && parseTarget(r[2]);
-        if (!r || !target || target.min == null) { err(line, 'eine Stufe der Leiter heisst "- Name: Zahl", z. B. "- Klimmzüge: 10"'); return; }
-        if (target.min !== target.max) { err(line, "eine Stufe der Leiter braucht eine Zahl, keinen Bereich"); return; }
-        if (ladder.some((x) => keyOf(x.name) === keyOf(r[1]))) { err(line, `"${r[1].trim()}" steht zweimal auf der Leiter`); return; }
+        if (!r || !target || target.min == null) { err(line, 'a ladder step is "- Name: number", e.g. "- Pull-ups: 10"'); return; }
+        if (target.min !== target.max) { err(line, "a ladder step needs one number, not a range"); return; }
+        if (ladder.some((x) => keyOf(x.name) === keyOf(r[1]))) { err(line, `"${r[1].trim()}" is on the ladder twice`); return; }
         ladder.push({ name: r[1].trim(), target: target.min, unit: target.unit });
         return;
       }
-      if (!day) { err(line, "eine Übung muss unter einem ### Tag stehen"); return; }
+      if (!day) { err(line, "an exercise has to be under a ### day"); return; }
       const bar = body.indexOf("|");
       const main = (bar < 0 ? body : body.slice(0, bar)).trim();
       const note = bar < 0 ? "" : body.slice(bar + 1).trim();
       const colon = main.indexOf(":");
       if (colon < 0) {
-        if (!main) { err(line, "leerer Punkt in der Liste"); return; }
+        if (!main) { err(line, "empty bullet"); return; }
         day.items.push({ name: main, note, unit: null, sets: [] });
-        warnings.push({ line, msg: `"${main}" hat keine Sätze und erscheint als Hinweis` });
+        warnings.push({ line, msg: `"${main}" has no sets and shows as a reminder` });
         return;
       }
       const name = main.slice(0, colon).trim();
-      if (!name) { err(line, "die Übung braucht einen Namen vor dem Doppelpunkt"); return; }
+      if (!name) { err(line, "the exercise needs a name before the colon"); return; }
       const rx = parsePrescription(main.slice(colon + 1));
       if (typeof rx === "string") { err(line, `${name}: ${rx}`); return; }
       day.items.push({ name, note, unit: rx.unit, sets: rx.sets });
@@ -172,15 +172,15 @@ export function parsePlan(text) {
     if (day) day.notes.push(s);
     else if (week) week.notes.push(s);
     else if (plan) plan.notes.push(s);
-    else if (section === "ladder") err(line, 'unter # Ladder ist jede Zeile "- Name: Zahl"');
-    else warnings.push({ line, msg: "Text vor der ersten Überschrift wird ignoriert" });
+    else if (section === "ladder") err(line, 'under # Ladder every line is "- Name: number"');
+    else warnings.push({ line, msg: "text before the first heading is ignored" });
   });
 
-  if (!plans.length) err(0, "kein # Plan in der Datei");
+  if (!plans.length) err(0, "no # Plan in the file");
   for (const p of plans) {
     const days = p.weeks.flatMap((w) => w.days);
-    if (!days.length) err(0, `Plan ${p.id} hat keine Tage`);
-    for (const d of days) if (!d.items.length) err(d.line, `"${d.title}" in Plan ${p.id} hat keine Übungen`);
+    if (!days.length) err(0, `Plan ${p.id} has no days`);
+    for (const d of days) if (!d.items.length) err(d.line, `"${d.title}" in Plan ${p.id} has no exercises`);
   }
   for (const p of plans) for (const w of p.weeks) for (const d of w.days) {
     const seen = {};
@@ -321,10 +321,13 @@ export function todayIso(now = new Date()) {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// "17 Nov".
 export function fmtDate(iso) {
   if (!iso) return "";
   const [, m, d] = iso.split("-");
-  return `${d}.${m}.`;
+  return `${Number(d)} ${MONTHS[Number(m) - 1]}`;
 }
 
 /* ---------- the saved state on the phone ---------- */
@@ -461,9 +464,9 @@ export function weekStart(iso) {
 
 export const weeksAgo = (iso, today) => Math.round((utc(weekStart(today)) - utc(weekStart(iso))) / (7 * DAY_MS));
 
-export const weeksAgoLabel = (n) => (n === 0 ? "diese Woche" : n === 1 ? "letzte Woche" : `vor ${n} Wochen`);
+export const weeksAgoLabel = (n) => (n === 0 ? "this week" : n === 1 ? "last week" : `${n} weeks ago`);
 
-export const fmtVal = (n, unit) => (unit === "sec" ? `${n} s` : `${n} Wdh.`);
+export const fmtVal = (n, unit) => (unit === "sec" ? `${n} s` : `${n} reps`);
 
 const filled = (vals) => (vals || []).filter((v) => v != null);
 

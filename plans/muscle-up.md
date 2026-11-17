@@ -2,7 +2,7 @@
 HOW TO WRITE THIS. The app reads this file as it is. Claude checks it before it goes live,
 so a typo can't break the app on his phone. This grey block is ignored by the app.
 
-LADDER: one line per step, "- Name: number". Muscle-up stays at 1. The plan is in German, exercise names in English (Keli, 14 Nov). The other two numbers are yours.
+LADDER: one line per step, "- Name: number". Muscle-up stays at 1. Everything is in English (Keli, 17 Nov; it was German with English exercise names before). The other two numbers are yours.
 
 PLANS: "# Plan A: who it's for". Under it "## Week 1", under that "### Day 1".
 Week and day names are up to you, e.g. "### Saturday with Keli". A day name can't repeat inside its week.
@@ -30,104 +30,104 @@ Write every week out in full: copy a week, paste it, change the numbers.
 - Chest-to-Bar: 1
 - Muscle-up: 1
 
-# Plan A: unter 6 Klimmzüge
-Vier Wochen, drei Trainings pro Woche: Legs, Push allein, dann Pull am Samstag mit Keli. In Woche 4 ein lockeres Push & Pull, am letzten Samstag wird getestet.
-Extra Liegestütze an freien Tagen sind willkommen: 2 lockere Sätze, nie bis zum Versagen.
+# Plan A: under 6 pull-ups
+Four weeks, three workouts a week: Legs, Push alone, then Pull on Saturday with Keli. Week 4 has an easy Push & Pull, and the last Saturday is the test.
+Extra push-ups on rest days are welcome: 2 easy sets, never to failure.
 
-## Woche 1
+## Week 1
 
 ### Legs
-Aufwärmen 5 Min: 20 Kniebeugen ohne Gewicht, Beinschwingen, 10 Ausfallschritte pro Bein. 90 s Pause zwischen den Sätzen.
-Nimm ein Gewicht, bei dem die letzten 2 Wiederholungen schwer, aber sauber sind. Schreib das Gewicht ins Notizfeld.
-- Squat: 3 x 8 | Langhantel, Hüfte tiefer als die Knie
-- Deadlift: 3 x 8 | Langhantel, Hüfte nach hinten, Rücken gerade
-- Bulgarian Split Squat: 3 x 6 | pro Bein, hinterer Fuss auf einer Bank
-- Calf Raises: 3 x 12 | auf einer Stufe, unten ganz dehnen
+Warm-up 5 min: 20 bodyweight squats, leg swings, 10 lunges per leg. 90 s rest between sets.
+Pick a weight where the last 2 reps are hard but clean. Write the weight in the notes.
+- Squat: 3 x 8 | barbell, hips below the knees
+- Deadlift: 3 x 8 | barbell, hips back, back straight
+- Bulgarian Split Squat: 3 x 6 | per leg, back foot on a bench
+- Calf Raises: 3 x 12 | on a step, full stretch at the bottom
 
 ### Push
-Aufwärmen 5 Min: Arm- und Handgelenkkreisen, 10 Schulterblatt-Klimmzüge. 2 Min Pause zwischen den Sätzen.
-- Wall Handstand: 3 x 10s | Bauch zur Wand, nur so weit hochlaufen, wie es sich sicher anfühlt
-- Dips: 3 x 3 | Schultern tiefer als die Ellbogen
-- Push-ups: 4 x 6 | Brust bis zum Boden, 2 Wiederholungen vor dem Versagen aufhören
-- Pike Push-ups: 3 x 5 | Kopf zwischen den Händen Richtung Boden
-- Tuck L-sit: 4 x 10s | am Barren oder zwischen zwei Stühlen, Knie zur Brust
+Warm-up 5 min: arm and wrist circles, 10 scapular pull-ups. 2 min rest between sets.
+- Wall Handstand: 3 x 10s | belly to the wall, only walk up as far as feels safe
+- Dips: 3 x 3 | shoulders below the elbows
+- Push-ups: 4 x 6 | chest to the floor, stop 2 reps before failure
+- Pike Push-ups: 3 x 5 | head down between the hands
+- Tuck L-sit: 4 x 10s | on parallel bars or between two chairs, knees to chest
 
 ### Pull
-Aufwärmen mit Keli. 2 bis 3 Min Pause zwischen den Klimmzug-Sätzen: saubere Wiederholungen schlagen mehr Wiederholungen.
-- Pull-ups: 5 x 1 | aus gestreckten Armen, Kinn über die Stange, kein Schwung
-- Negative Pull-ups: 3 x 3 | hochspringen, in 5 s runterlassen
-- Inverted Rows: 3 x 8 | tiefe Stange, Körper gerade wie ein Brett
+Warm up with Keli. 2 to 3 min rest between pull-up sets: clean reps beat more reps.
+- Pull-ups: 5 x 1 | from straight arms, chin over the bar, no swinging
+- Negative Pull-ups: 3 x 3 | jump up, lower in 5 s
+- Inverted Rows: 3 x 8 | low bar, body straight like a plank
 - Dead Hang: 2 x max s
 
-## Woche 2
+## Week 2
 
 ### Legs
-90 s Pause zwischen den Sätzen. Saubere Wiederholungen, dann etwas schwerer.
-- Squat: 3 x 10 | Langhantel
-- Deadlift: 3 x 10 | Langhantel
-- Bulgarian Split Squat: 3 x 8 | pro Bein
+90 s rest between sets. Clean reps, then a bit heavier.
+- Squat: 3 x 10 | barbell
+- Deadlift: 3 x 10 | barbell
+- Bulgarian Split Squat: 3 x 8 | per leg
 - Calf Raises: 3 x 15
 
 ### Push
-Aufwärmen 5 Min: Arm- und Handgelenkkreisen, 10 Schulterblatt-Klimmzüge. 2 Min Pause zwischen den Sätzen.
-- Wall Handstand: 3 x 15s | Bauch zur Wand
+Warm-up 5 min: arm and wrist circles, 10 scapular pull-ups. 2 min rest between sets.
+- Wall Handstand: 3 x 15s | belly to the wall
 - Dips: 4 x 3
-- Push-ups: 4 x 8 | 2 Wiederholungen vor dem Versagen aufhören
+- Push-ups: 4 x 8 | stop 2 reps before failure
 - Pike Push-ups: 3 x 6
-- One-leg L-sit: 4 x 5s | Bein jeden Satz wechseln
+- One-leg L-sit: 4 x 5s | switch legs every set
 
 ### Pull
-Aufwärmen mit Keli. 2 bis 3 Min Pause zwischen den Klimmzug-Sätzen.
-- Pull-ups: 4 x 2 | aus gestreckten Armen, kein Schwung
-- Negative Pull-ups: 3 x 4 | in 5 s runterlassen
+Warm up with Keli. 2 to 3 min rest between pull-up sets.
+- Pull-ups: 4 x 2 | from straight arms, no swinging
+- Negative Pull-ups: 3 x 4 | lower in 5 s
 - Inverted Rows: 3 x 10
 - Dead Hang: 2 x max s
 
-## Woche 3
+## Week 3
 
 ### Legs
-90 s Pause zwischen den Sätzen. Saubere Wiederholungen, dann etwas schwerer.
-- Squat: 3 x 12 | Langhantel
-- Deadlift: 3 x 12 | Langhantel
-- Bulgarian Split Squat: 3 x 10 | pro Bein
+90 s rest between sets. Clean reps, then a bit heavier.
+- Squat: 3 x 12 | barbell
+- Deadlift: 3 x 12 | barbell
+- Bulgarian Split Squat: 3 x 10 | per leg
 - Calf Raises: 3 x 20
 
 ### Push
-Aufwärmen 5 Min: Arm- und Handgelenkkreisen, 10 Schulterblatt-Klimmzüge. 2 Min Pause zwischen den Sätzen.
-- Wall Handstand: 3 x 20s | Bauch zur Wand
+Warm-up 5 min: arm and wrist circles, 10 scapular pull-ups. 2 min rest between sets.
+- Wall Handstand: 3 x 20s | belly to the wall
 - Dips: 3 x 5
-- Push-ups: 4 x 10 | 2 Wiederholungen vor dem Versagen aufhören
+- Push-ups: 4 x 10 | stop 2 reps before failure
 - Pike Push-ups: 3 x 8
-- L-sit: 4 x max s | Beine gestreckt, beugen, wenn sie absinken
+- L-sit: 4 x max s | legs straight, bend them when they drop
 
 ### Pull
-Aufwärmen mit Keli. 2 bis 3 Min Pause zwischen den Klimmzug-Sätzen.
-- Pull-ups: 5 x 2 | aus gestreckten Armen, kein Schwung
-- Negative Pull-ups: 3 x 5 | in 5 s runterlassen
-- Inverted Rows: 3 x 12 | Stange tiefer, wenn es leicht wird
+Warm up with Keli. 2 to 3 min rest between pull-up sets.
+- Pull-ups: 5 x 2 | from straight arms, no swinging
+- Negative Pull-ups: 3 x 5 | lower in 5 s
+- Inverted Rows: 3 x 12 | lower the bar when it gets easy
 - Dead Hang: 2 x max s
 
-## Woche 4
+## Week 4
 
 ### Legs
-90 s Pause zwischen den Sätzen. Saubere Wiederholungen, dann etwas schwerer.
-- Squat: 3 x 8 | Langhantel, schwerer als in Woche 1
-- Deadlift: 3 x 8 | Langhantel, schwerer als in Woche 1
-- Bulgarian Split Squat: 3 x 8 | pro Bein
+90 s rest between sets. Clean reps, then a bit heavier.
+- Squat: 3 x 8 | barbell, heavier than week 1
+- Deadlift: 3 x 8 | barbell, heavier than week 1
+- Bulgarian Split Squat: 3 x 8 | per leg
 - Calf Raises: 3 x 15
 
 ### Push & Pull
-Lockere Woche vor dem Test: jeden Satz frisch beenden.
-- Pull-ups: 3 x 2 | locker, frisch aufhören
+Easy week before the test: finish every set fresh.
+- Pull-ups: 3 x 2 | easy, stop while fresh
 - Inverted Rows: 2 x 10
 - Push-ups: 3 x 8
 - Wall Handstand: 3 x 15s
 - Tuck L-sit: 3 x 10s
 
 ### Test
-Mit Keli am Samstag. Gut aufwärmen, dann je ein Maximalversuch mit 3 bis 5 Min Pause dazwischen. Filmt die Klimmzüge für das Vorher-Nachher.
-- Pull-ups: 1 x max | sauber, aus gestreckten Armen
-- Push-ups: 1 x max | Brust bis zum Boden
+With Keli on Saturday. Warm up well, then one max attempt each with 3 to 5 min rest in between. Film the pull-ups for the before and after.
+- Pull-ups: 1 x max | clean, from straight arms
+- Push-ups: 1 x max | chest to the floor
 - Dips: 1 x max
 - Wall Handstand: 1 x max s
 - L-sit: 1 x max s

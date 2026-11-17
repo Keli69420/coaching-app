@@ -4,10 +4,10 @@ Two tabs for a client training toward a goal, switched at the bottom like Yapp.
 
 **The look** (14 Nov, from reference shots Keli sent; the name with fading copies above and below it in the header and on the icon since 17 Nov, after a "FOCUS" shot): near-black with a faint dot grid, frosted dark cards, saturated glow cards (violet, pink, blue, teal, orange), dials as rings of ticks, thin geometric text and numbers (Outfit; the dot-matrix numbers went on 15 Nov, Keli didn't like them).
 
-- **Training** (opens here): **today's session** from the coach's plan, nothing else. A dot per session for the whole plan. Like Yapp, he **starts** the session (until then it's a list of what's coming and a Start button), types into one card per exercise with a disc per set, and **saves** it. Each exercise card has its own colour (violet, pink, blue, teal, orange); a hit set turns white and the card glows brighter in its colour as sets get hit. Saved, the session is a summary card (sets, new records, what's next) with Bearbeiten to change it and "Training löschen" (two taps) to remove it.
-- **Fortschritt**: the **ladder** as three tiles with a tick dial each, showing how close he is (for the first client: pull-ups → chest-to-bar → muscle-up) and a trend card for the step he's on; tap a dial to type a test. Below it, like Yapp's Progress page: this week's trainings and sets against last week, sets per week as columns of dots, and one card per exercise with his record, this week against the last week he did it, and a line of his best per week.
+- **Workout** (opens here): **today's session** from the coach's plan, nothing else. A dot per session for the whole plan. Like Yapp, he **starts** the session (until then it's a list of what's coming and a Start button), types into one card per exercise with a disc per set, and **saves** it. Each exercise card has its own colour (violet, pink, blue, teal, orange); a hit set turns white and the card glows brighter in its colour as sets get hit. Saved, the session is a summary card (sets, new PRs, what's next) with Edit to change it and "Delete workout" (two taps) to remove it.
+- **Progress**: the **ladder** as three tiles with a tick dial each, showing how close he is (for the first client: pull-ups → chest-to-bar → muscle-up) and a trend card for the step he's on; tap a dial to type a test. Below it, like Yapp's Progress page: this week's workouts and sets against last week, sets per week as columns of dots, and one card per exercise with his record, this week against the last week he did it, and a line of his best per week.
 
-**The screen is in German** (Swiss: du, "ss" never "ß"), and so are the plan-file error messages. This README and `tools/` stay in English.
+**Everything is in English** (Keli, 17 Nov): the screen, the plan-file error messages and the plan itself. From 14 to 17 Nov it was in German; the plan reader still takes German units (`Sek`, `Wdh`).
 
 The coach's plan is a **text file**, not code. Client three with the same goal needs nothing new; a different goal is a new plan file.
 
@@ -15,7 +15,7 @@ The coach's plan is a **text file**, not code. Client three with the same goal n
 
 Open the link in Safari, then **⋯ → Share → View More → Add to Home Screen → Add** (leave "Open as Web App" on). Do this **before logging anything**, then always open it from the home-screen icon. The home-screen app and Safari keep separate data (found on Yapp).
 
-First open: on Fortschritt, tap each ladder step and type the test result. With one plan in the file it is picked for him and there's no plan chip. That's the whole setup.
+First open: on Progress, tap each ladder step and type the test result. With one plan in the file it is picked for him and there's no plan chip. That's the whole setup.
 
 ## Where things live
 
@@ -47,7 +47,7 @@ A plain line is for the coach only: the app doesn't show it.
 - Something to remember      no colon: a reminder with no fields
 ```
 
-(The numbers above only show the format.) Anything he has to see goes after `|` on an exercise, or on its own as a reminder line. Seconds can also be written `Sek` or `Sekunden`, reps `Wdh`. Obsidian comments (`%% ... %%`), HTML comments and front matter are ignored, so instructions can live in the file.
+(The numbers above only show the format.) Anything he has to see goes after `|` on an exercise, or on its own as a reminder line. Seconds can also be written `sec` or `seconds` (or German `Sek`, `Sekunden`), reps `reps` (or `Wdh`). Obsidian comments (`%% ... %%`), HTML comments and front matter are ignored, so instructions can live in the file.
 
 **Check before every push:**
 
@@ -61,10 +61,10 @@ It prints every plan as the app will read it and refuses typos with a line numbe
 
 - **Which session opens:** one he started today; otherwise the one after the furthest session he has logged anything in (so a skipped day doesn't pin the app to it); otherwise the first. `currentIndex()` in `logic.js`.
 - **A session's date** is the day he started it. Fixing an old number later doesn't move it.
-- **Start, save, edit** work like Yapp: Start makes an empty session, Save needs at least one number, Bearbeiten keeps a copy so "Bearbeiten abbrechen" puts the saved numbers back, and "Training abbrechen" on a new session throws it away (both two taps). A session started on an earlier day with nothing typed is dropped when the app opens. Saving is a summary, not a gate: the dots, the ladder and Fortschritt count every number he typed, saved or not, like Yapp. A record on the saved card has to beat every earlier day for that exercise. `startSession()` to `tidyLogs()` and `sessionSummary()` in `logic.js`.
+- **Start, save, edit** work like Yapp: Start makes an empty session, Save needs at least one number, Edit keeps a copy so "Stop editing" puts the saved numbers back, and "Stop workout" on a new session throws it away (both two taps). A session started on an earlier day with nothing typed is dropped when the app opens. Saving is a summary, not a gate: the dots, the ladder and Progress count every number he typed, saved or not, like Yapp. A PR on the saved card has to beat every earlier day for that exercise. `startSession()` to `tidyLogs()` and `sessionSummary()` in `logic.js`.
 - **The ladder:** each step's best is the higher of (a) a test typed in by tapping the step and (b) any logged set of an exercise with exactly that step's name, capitals ignored. So "Negative pull-ups" never counts as a pull-up. One test per step per day; typing again the same day replaces it, an empty one removes it. `ladderState()` in `logic.js`.
-- **Hit:** at least the bottom of the goal; any number counts for "max". A hit set gets the volt tick.
-- **Fortschritt:** weeks run Monday to Sunday. A training counts in the week of its date once it has a number in it. Exercise cards match by name and unit across days and plans, and only count logged sets (tests move the rings, not the cards). The charts start at his first logged week, at least 4 weeks and at most 8 back. `weeklyTotals()` and `exerciseStats()` in `logic.js`.
+- **Hit:** at least the bottom of the goal; any number counts for "max". A hit disc turns white.
+- **Progress:** weeks run Monday to Sunday. A workout counts in the week of its date once it has a number in it. Exercise cards match by name and unit across days and plans, and only count logged sets (tests move the rings, not the cards). The charts start at his first logged week, at least 4 weeks and at most 8 back. `weeklyTotals()` and `exerciseStats()` in `logic.js`.
 - **Switching plan** keeps everything: logs are stored per plan and day, and the ladder counts all of them.
 - **Logs are keyed by plan, week title and day title,** and exercises by name. Renaming a week or day in the plan file after he has logged it hides those logs from the session (the ladder still counts them). Adding or reordering exercises is safe.
 

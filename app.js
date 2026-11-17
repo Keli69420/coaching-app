@@ -55,7 +55,7 @@ function persist() {
     statusEl.textContent = "";
     return true;
   } catch {
-    statusEl.textContent = "nicht gespeichert";
+    statusEl.textContent = "not saved";
     return false;
   }
 }
@@ -95,8 +95,8 @@ function ticks(share, size, n, len) {
 // Each exercise card, and its line in the list before Start, gets one of these colours in turn.
 const HUES = 5;
 
-// A value with its number set apart from a smaller unit: "22 s", "6 Wdh.".
-const numHtml = (n, unit) => `<b class="num">${esc(n)}</b><small class="unit">${unit === "sec" ? "s" : "Wdh."}</small>`;
+// A value with its number set apart from a smaller unit: "22 s", "6 reps".
+const numHtml = (n, unit) => `<b class="num">${esc(n)}</b><small class="unit">${unit === "sec" ? "s" : "reps"}</small>`;
 
 const plan = () => program?.plans.find((p) => p.id === state.plan) ?? null;
 const sessions = () => sessionsOf(plan());
@@ -117,19 +117,19 @@ function render() {
   if (broken) {
     chipEl.innerHTML = "";
     ladderEl.innerHTML = "";
-    if (loadError) main.innerHTML = msgHtml("Noch kein Plan", `<p>${esc(loadError)}</p>`);
-    else if (!program) main.innerHTML = `<p class="loading">Plan wird geladen…</p>`;
+    if (loadError) main.innerHTML = msgHtml("No plan yet", `<p>${esc(loadError)}</p>`);
+    else if (!program) main.innerHTML = `<p class="loading">Loading the plan…</p>`;
     else {
-      main.innerHTML = msgHtml("Im Plan stimmt etwas nicht", `
-        <p>Korrigiere das in <code>${esc(PLAN_URL)}</code>:</p>
-        <ul>${program.errors.map((e) => `<li>${e.line ? `Zeile ${e.line}: ` : ""}${esc(e.msg)}</li>`).join("")}</ul>`);
+      main.innerHTML = msgHtml("Something in the plan is wrong", `
+        <p>Fix this in <code>${esc(PLAN_URL)}</code>:</p>
+        <ul>${program.errors.map((e) => `<li>${e.line ? `Line ${e.line}: ` : ""}${esc(e.msg)}</li>`).join("")}</ul>`);
     }
     return;
   }
   const picked = plan();
   // With one plan in the file there's nothing to switch to, so there's no chip at all.
   chipEl.innerHTML = !picked || program.plans.length === 1 ? ""
-    : `<button type="button" class="chip${pickerOpen ? " on" : ""}" data-act="picker" aria-expanded="${pickerOpen}" aria-label="Plan ${esc(picked.id)}. Tippen zum Wechseln.">Plan <b>${esc(picked.id)}</b></button>`;
+    : `<button type="button" class="chip${pickerOpen ? " on" : ""}" data-act="picker" aria-expanded="${pickerOpen}" aria-label="Plan ${esc(picked.id)}. Tap to switch.">Plan <b>${esc(picked.id)}</b></button>`;
   if (pickerOpen || !picked) {
     ladderEl.innerHTML = "";
     main.innerHTML = pickerHtml(picked);
@@ -154,7 +154,7 @@ function ladderHtml() {
     const unit = s.unit === "sec" ? " s" : "";
     return `
       <button type="button" class="gauge ${cls}${testing === s.key ? " open" : ""}" data-act="test" data-step="${esc(s.key)}" aria-expanded="${testing === s.key}"
-        aria-label="${esc(s.name)}: Rekord ${s.best ?? "noch keiner"} von ${s.target}${unit}. Tippen, um einen Test einzutragen.">
+        aria-label="${esc(s.name)}: PR ${s.best ?? "none yet"} of ${s.target}${unit}. Tap to log a test.">
         <span class="dial">${ticks(s.share, 100, 48, 9)}
           <span class="val">${s.best == null ? `<b class="none">0</b>` : `<b>${s.best}</b>`}<small>/${s.target}${unit}</small></span>
         </span>
@@ -170,11 +170,11 @@ function trendHtml(step, finished) {
   const sec = step.unit === "sec" ? " s" : "";
   let big;
   let label = esc(step.name);
-  if (finished) big = `<b>${step.best}</b><span>${sec ? "s, " : ""}Ziel erreicht</span>`;
-  else if (step.best == null) big = `<b class="none">0</b><span>Tipp auf den Ring zum Testen</span>`;
+  if (finished) big = `<b>${step.best}</b><span>${sec ? "s, " : ""}goal reached</span>`;
+  else if (step.best == null) big = `<b class="none">0</b><span>Tap a dial to test</span>`;
   else {
-    big = `<b>${step.target - step.best}</b><span>${sec ? "s " : ""}fehlen noch</span>`;
-    label += ` · Rekord ${step.best}${sec}`;
+    big = `<b>${step.target - step.best}</b><span>${sec ? "s " : ""}to go</span>`;
+    label += ` · PR ${step.best}${sec}`;
   }
   return `
     <div class="trend">
@@ -230,11 +230,11 @@ function testHtml(step) {
   const todays = state.tests[step.key]?.[today];
   return `
     <form class="test" data-step="${esc(step.key)}" autocomplete="off">
-      <label for="testval">${esc(step.name)} · Test heute</label>
-      <input class="f" id="testval" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" value="${todays ?? ""}" aria-label="${esc(step.name)}, Test heute, ${step.unit === "sec" ? "Sekunden" : "Wiederholungen"}">
-      <span class="unit">${step.unit === "sec" ? "s" : "Wdh."}</span>
-      <button type="submit" class="btn">Speichern</button>
-      <button type="button" class="x" data-act="closetest" aria-label="Schliessen">×</button>
+      <label for="testval">${esc(step.name)} · test today</label>
+      <input class="f" id="testval" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" value="${todays ?? ""}" aria-label="${esc(step.name)}, test today, ${step.unit === "sec" ? "seconds" : "reps"}">
+      <span class="unit">${step.unit === "sec" ? "s" : "reps"}</span>
+      <button type="submit" class="btn">Save</button>
+      <button type="button" class="x" data-act="closetest" aria-label="Close">×</button>
     </form>`;
 }
 
@@ -243,12 +243,12 @@ function testHtml(step) {
 function pickerHtml(picked) {
   return `
     <section class="picker" role="group" aria-label="Plan">
-      <p class="pickhead">${picked ? "Plan wechseln" : "Wähl deinen Plan"}</p>
+      <p class="pickhead">${picked ? "Switch plan" : "Pick your plan"}</p>
       ${program.plans.map((p) => `
         <button type="button" class="pick" data-act="plan" data-plan="${esc(p.id)}" aria-pressed="${p.id === state.plan}">
           <span class="letter">${esc(p.id)}</span>${p.title ? `<span class="ptitle">${esc(p.title)}</span>` : ""}
         </button>`).join("")}
-      ${picked ? `<button type="button" class="link" data-act="picker">Bei Plan ${esc(picked.id)} bleiben</button>` : ""}
+      ${picked ? `<button type="button" class="link" data-act="picker">Stay on Plan ${esc(picked.id)}</button>` : ""}
     </section>`;
 }
 
@@ -259,14 +259,14 @@ function kicker(i) {
   const s = list[i];
   const log = state.logs[s.key];
   const c = current();
-  if (i === list.length - 1 && planDone(list, state.logs, today)) return "Plan fertig";
-  if (log?.done) return log.date === today ? "Heute · gespeichert" : `Erledigt ${fmtDate(log.date)}`;
+  if (i === list.length - 1 && planDone(list, state.logs, today)) return "Plan done";
+  if (log?.done) return log.date === today ? "Today · saved" : `Done ${fmtDate(log.date)}`;
   if (log) {
-    if (log.date === today) return sessionComplete(s, log) ? "Heute · komplett" : "Heute";
-    if (hasValues(log)) return `Nicht gespeichert · ${fmtDate(log.date)}`;
+    if (log.date === today) return sessionComplete(s, log) ? "Today · complete" : "Today";
+    if (hasValues(log)) return `Not saved · ${fmtDate(log.date)}`;
   }
-  if (i === c) return "Als Nächstes";
-  return i < c ? "Nicht eingetragen" : "Kommt noch";
+  if (i === c) return "Up next";
+  return i < c ? "Not logged" : "Coming up";
 }
 
 // The whole plan as a row of dots, a gap between weeks, each day of the week in its own
@@ -291,7 +291,7 @@ function sessionHtml() {
   const log = state.logs[s.key];
   const c = current();
   const away = i !== c;
-  const backTo = state.logs[list[c].key]?.date === today ? "Zurück zu heute" : "Zurück zum nächsten Training";
+  const backTo = state.logs[list[c].key]?.date === today ? "Back to today" : "Back to the next workout";
   const done = i === list.length - 1 && planDone(list, state.logs, today);
   return `
     <div class="sesshead">
@@ -300,54 +300,54 @@ function sessionHtml() {
         <h2>${esc(s.week)} · ${esc(s.day)}</h2>
       </div>
       <div class="nav">
-        <button type="button" data-act="prev" aria-label="Vorheriges Training"${i === 0 ? " disabled" : ""}>${LEFT}</button>
-        <button type="button" data-act="next" aria-label="Nächstes Training"${i === list.length - 1 ? " disabled" : ""}>${RIGHT}</button>
+        <button type="button" data-act="prev" aria-label="Previous workout"${i === 0 ? " disabled" : ""}>${LEFT}</button>
+        <button type="button" data-act="next" aria-label="Next workout"${i === list.length - 1 ? " disabled" : ""}>${RIGHT}</button>
       </div>
     </div>
-    <div class="dots" id="dots" role="group" aria-label="Trainings">${dotsHtml(i)}</div>
+    <div class="dots" id="dots" role="group" aria-label="Workouts">${dotsHtml(i)}</div>
     ${away ? `<button type="button" class="link back" data-act="home">${backTo}</button>` : ""}
-    ${done ? `<p class="banner">Das war der ganze Plan. Zeit für einen neuen Test unter Fortschritt.</p>` : ""}
+    ${done ? `<p class="banner">That was the whole plan. Time for a new test under Progress.</p>` : ""}
     ${!log ? ghostHtml(s) : log.done ? savedHtml(s, list[i + 1]) : `
       <div class="exbar">
-        <button type="button" class="pill" data-act="stop" data-confirm="${log.saved ? "Nochmal tippen: Änderungen weg" : "Nochmal tippen zum Verwerfen"}">${log.saved ? "Bearbeiten abbrechen" : "Training abbrechen"}</button>
+        <button type="button" class="pill" data-act="stop" data-confirm="${log.saved ? "Tap again to undo edits" : "Tap again to discard"}">${log.saved ? "Stop editing" : "Stop workout"}</button>
       </div>
       <div class="items">${s.items.map((it, n) => itemHtml(it, log, n)).join("")}</div>
       <label class="notes">
-        <span>Notizen</span>
-        <textarea id="note" rows="2" placeholder="Wie hat es sich angefühlt? Tut etwas weh?">${esc(log.note ?? "")}</textarea>
+        <span>Notes</span>
+        <textarea id="note" rows="2" placeholder="How did it feel? Does anything hurt?">${esc(log.note ?? "")}</textarea>
       </label>
-      <button type="button" class="start" data-act="finish"><span>Training speichern</span><span class="knob">${TICK}</span></button>
+      <button type="button" class="start" data-act="finish"><span>Save workout</span><span class="knob">${TICK}</span></button>
       <p class="formerr" id="finisherr" role="alert"></p>`}`;
 }
 
 // Not started yet: what's coming, and a button to start. Same as Yapp.
 function ghostHtml(s) {
   return `
-    <button type="button" class="start" data-act="start"><span>Training starten</span><span class="knob">${RIGHT}</span></button>
+    <button type="button" class="start" data-act="start"><span>Start workout</span><span class="knob">${RIGHT}</span></button>
     <ul class="exlist">${s.items.map((it, n) => `<li class="hue${n % HUES}"><span><i aria-hidden="true"></i>${esc(it.name)}</span>${it.sets.length ? `<small>${esc(fmtPrescription(it))}</small>` : ""}</li>`).join("")}</ul>`;
 }
 
-// Saved: a summary card instead of the fields. Bearbeiten opens them again.
+// Saved: a summary card instead of the fields. Edit opens them again.
 function savedHtml(s, next) {
   const { sets, records } = sessionSummary(program.plans.flatMap(sessionsOf), state.logs, s);
-  const bits = [count(sets, "Satz", "Sätze")];
-  if (records.length) bits.push(count(records.length, "neuer Rekord", "neue Rekorde"));
+  const bits = [count(sets, "set", "sets")];
+  if (records.length) bits.push(count(records.length, "new PR", "new PRs"));
   return `
     <section class="saved">
       <div class="savedhead">
         <span class="knob small">${TICK}</span>
-        <div class="savedtext"><h3>${esc(s.day)} gespeichert</h3><p>${bits.join(" · ")}</p></div>
-        <button type="button" class="pill" data-act="reopen">Bearbeiten</button>
+        <div class="savedtext"><h3>${esc(s.day)} saved</h3><p>${bits.join(" · ")}</p></div>
+        <button type="button" class="pill" data-act="reopen">Edit</button>
       </div>
-      ${records.map((r) => `<p class="savedpr"><span class="prtag">Rekord</span><span class="savedname">${esc(r.name)}</span><span class="prval">${numHtml(r.best, r.unit)}</span></p>`).join("")}
-      ${next ? `<p class="savednext">Als Nächstes: ${esc(next.week)} · ${esc(next.day)}</p>` : ""}
+      ${records.map((r) => `<p class="savedpr"><span class="prtag">PR</span><span class="savedname">${esc(r.name)}</span><span class="prval">${numHtml(r.best, r.unit)}</span></p>`).join("")}
+      ${next ? `<p class="savednext">Up next: ${esc(next.week)} · ${esc(next.day)}</p>` : ""}
     </section>
-    <button type="button" class="textbtn" data-act="delete">Training löschen</button>`;
+    <button type="button" class="textbtn" data-act="delete">Delete workout</button>`;
 }
 
 const hitsOf = (it, vals) => it.sets.filter((t, j) => hit(t, vals[j] ?? null)).length;
 const miniHtml = (hits, total) =>
-  `<span class="mini" aria-label="${hits} von ${total} Sätzen geschafft">${ticks(hits / total, 44, 24, 5)}<span>${hits}/${total}</span></span>`;
+  `<span class="mini" aria-label="${hits} of ${total} sets hit">${ticks(hits / total, 44, 24, 5)}<span>${hits}/${total}</span></span>`;
 
 // Each exercise is a card that glows brighter in its own colour as sets get hit. A set is
 // a disc: the goal shows inside until he types, and a hit disc turns white.
@@ -367,7 +367,7 @@ function itemHtml(it, log, n) {
     return `
       <span class="set${hit(t, v) ? " hit" : ""}">
         <input class="f" data-item="${esc(it.key)}" data-set="${j}" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off"
-          placeholder="${esc(goal)}" aria-label="${esc(`${it.name}, Satz ${j + 1}, Ziel ${fmtTarget(t, it.unit)}`)}" value="${v ?? ""}">
+          placeholder="${esc(goal)}" aria-label="${esc(`${it.name}, set ${j + 1}, goal ${fmtTarget(t, it.unit)}`)}" value="${v ?? ""}">
       </span>`;
   }).join("");
   return `
@@ -386,7 +386,7 @@ function itemHtml(it, log, n) {
 const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
 function tileHtml(value, one, many, diff) {
-  const delta = diff > 0 ? `<b class="up">▲ ${diff}</b> vs. Vorwoche` : diff < 0 ? `<b>▼ ${-diff}</b> vs. Vorwoche` : "Gleich wie Vorwoche";
+  const delta = diff > 0 ? `<b class="up">▲ ${diff}</b> vs. last week` : diff < 0 ? `<b>▼ ${-diff}</b> vs. last week` : "Same as last week";
   return `
     <div class="tile">
       <p class="big">${value}</p>
@@ -408,45 +408,45 @@ function barsHtml(totals) {
   const max = Math.max(1, ...totals.map((t) => t.sets));
   return `
     <div class="pchart" data-chart>
-      <p class="clabel">Sätze pro Woche</p>
-      <div class="bars" role="group" aria-label="Sätze pro Woche, letzte ${WEEKS} Wochen">
+      <p class="clabel">Sets per week</p>
+      <div class="bars" role="group" aria-label="Sets per week, last ${WEEKS} weeks">
         ${totals.map((t, i) => {
-          const say = `${weeksAgoLabel(t.weeksAgo)} · ${count(t.sets, "Satz", "Sätze")}, ${count(t.sessions, "Training", "Trainings")}`;
+          const say = `${weeksAgoLabel(t.weeksAgo)} · ${count(t.sets, "set", "sets")}, ${count(t.sessions, "workout", "workouts")}`;
           return `<button type="button" class="bar${t.weeksAgo === 0 ? " on" : ""}" data-read="${esc(say)}" data-i="${i}" data-dot="${i}" aria-label="${esc(say)}">${barDots(t.sets, max)}</button>`;
         }).join("")}
       </div>
-      <p class="axis"><span class="read">${weeksAgoLabel(WEEKS - 1)}</span><span>diese Woche</span></p>
+      <p class="axis"><span class="read">${weeksAgoLabel(WEEKS - 1)}</span><span>this week</span></p>
     </div>`;
 }
 
 function sparkHtml(st) {
   const W = 300, H = 56, PAD = 10;
   const pts = sparkPoints(st.weekly, W, H, PAD);
-  if (!pts.length) return `<p class="none">In den letzten ${WEEKS} Wochen nicht gemacht.</p>`;
+  if (!pts.length) return `<p class="none">Not done in the last ${WEEKS} weeks.</p>`;
   const step = (W - 2 * PAD) / (WEEKS - 1);
   const lastI = pts[pts.length - 1].i;
-  const says = st.weekly.map((v, i) => `${weeksAgoLabel(WEEKS - 1 - i)} · ${v == null ? "nicht gemacht" : fmtVal(v, st.unit)}`);
+  const says = st.weekly.map((v, i) => `${weeksAgoLabel(WEEKS - 1 - i)} · ${v == null ? "not done" : fmtVal(v, st.unit)}`);
   return `
     <div class="pchart spark" data-chart>
-      <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(`${st.name}, bester Satz pro Woche: ${says.join(", ")}`)}">
+      <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(`${st.name}, best set per week: ${says.join(", ")}`)}">
         ${pts.length > 1 ? `<polyline points="${pts.map((p) => `${p.x},${p.y}`).join(" ")}"/>` : ""}
         ${pts.map((p) => `<circle cx="${p.x}" cy="${p.y}" r="5" data-dot="${p.i}"${p.i === lastI ? ' class="on"' : ""}/>`).join("")}
         ${says.map((say, i) => `<rect x="${PAD + i * step - step / 2}" y="0" width="${step}" height="${H}" fill="transparent" data-read="${esc(say)}" data-i="${i}"/>`).join("")}
       </svg>
-      <p class="axis"><span class="read">${weeksAgoLabel(WEEKS - 1)}</span><span>diese Woche</span></p>
+      <p class="axis"><span class="read">${weeksAgoLabel(WEEKS - 1)}</span><span>this week</span></p>
     </div>`;
 }
 
 function statCardHtml(st) {
   const v = (n) => numHtml(n, st.unit);
   const arrow = { up: "▲", down: "▼", same: "=" }[st.trend] ?? "";
-  const word = { up: "besser", down: "schlechter", same: "gleich" }[st.trend] ?? "";
+  const word = { up: "better", down: "worse", same: "same" }[st.trend] ?? "";
   const cell = (c) => `<div class="cell"><span class="lbl">${weeksAgoLabel(c.weeksAgo)}</span><span class="cval">${v(c.best)}</span></div>`;
   return `
     <section class="pcard">
       <div class="phead">
         <h3>${esc(st.name)}</h3>
-        <p class="pr"><span class="prtag">Rekord</span><span class="prval">${v(st.pr.best)}</span></p>
+        <p class="pr"><span class="prtag">PR</span><span class="prval">${v(st.pr.best)}</span></p>
       </div>
       <p class="prdate">${fmtDate(st.pr.date)}</p>
       <div class="cmp${st.previous ? "" : " one"}">
@@ -466,15 +466,15 @@ function progressHtml() {
   const stats = exerciseStats(program.plans.flatMap(sessionsOf), state.logs, today, WEEKS);
   return `
     <section class="progress">
-      <p class="sect">Diese Woche</p>
+      <p class="sect">This week</p>
       <div class="tiles">
-        ${tileHtml(now.sessions, "Training", "Trainings", now.sessions - before.sessions)}
-        ${tileHtml(now.sets, "Satz", "Sätze", now.sets - before.sets)}
+        ${tileHtml(now.sessions, "Workout", "Workouts", now.sessions - before.sessions)}
+        ${tileHtml(now.sets, "Set", "Sets", now.sets - before.sets)}
       </div>
       ${barsHtml(totals)}
-      <p class="sect">Übungen</p>
+      <p class="sect">Exercises</p>
       ${stats.length ? `<div class="pcards">${stats.map(statCardHtml).join("")}</div>`
-        : `<p class="empty">Noch nichts eingetragen. Nach deinem ersten Training stehen hier deine Rekorde.</p>`}
+        : `<p class="empty">Nothing logged yet. Your PRs show up here after your first workout.</p>`}
     </section>`;
 }
 
@@ -514,7 +514,7 @@ root.addEventListener("input", (e) => {
   saveSoon();
 });
 
-// The first number turns "Als Nächstes" into "Heute" and fills the session's dot.
+// The first number turns "Up next" into "Today" and fills the session's dot.
 // Only those bits are redrawn, so the keyboard stays where it is.
 function refreshAfterLog() {
   const i = shownIndex();
@@ -644,14 +644,14 @@ root.addEventListener("click", (e) => {
     const log = state.logs[s.key];
     const before = log.saved;
     if (!finishSession(state, s)) {
-      document.getElementById("finisherr").textContent = "Noch nichts eingetragen.";
+      document.getElementById("finisherr").textContent = "Nothing logged yet.";
       return;
     }
     // Only say it's saved if it really is.
     if (!persist()) {
       log.done = false;
       if (before) log.saved = before;
-      document.getElementById("finisherr").textContent = "Konnte nicht speichern. Versuch es nochmal.";
+      document.getElementById("finisherr").textContent = "Couldn't save. Try again.";
       return;
     }
     render();
@@ -669,7 +669,7 @@ root.addEventListener("click", (e) => {
     render();
     document.body.scrollTo(0, 0);
   } else if (act === "delete") {
-    if (!armed(btn, "Nochmal tippen zum Löschen")) return;
+    if (!armed(btn, "Tap again to delete")) return;
     deleteSession(state, s);
     persist();
     keepShowing(i);
@@ -725,7 +725,7 @@ async function start() {
       persist();
     }
   } catch {
-    loadError = "Der Plan konnte nicht geladen werden. Öffne die App einmal mit Internet.";
+    loadError = "Couldn't load the plan. Open the app once with internet.";
   }
   render();
 }
