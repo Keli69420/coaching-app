@@ -538,6 +538,8 @@ function profileHtml() {
       <button type="button" class="back edit" data-act="editprofile">Edit profile</button>
       <h2 class="sect">Activities</h2>
       ${acts.length ? `<ul class="acts">${acts.map(activityHtml).join("")}</ul>` : `<p class="empty">Saved workouts show up here.</p>`}
+      <h2 class="sect" id="profsettings">Settings</h2>
+      ${settingsGroupHtml()}
     </section>`;
 }
 
@@ -561,10 +563,17 @@ function activityHtml(a) {
 }
 
 function settingsHtml() {
-  const themes = [["system", "System"], ["light", "Light"], ["dark", "Dark"]];
   return `
     <section class="settings">
       <header class="head"><h2 class="title">Settings</h2></header>
+      ${settingsGroupHtml()}
+    </section>`;
+}
+
+// The settings themselves: on the Settings tab and again at the bottom of the profile.
+function settingsGroupHtml() {
+  const themes = [["system", "System"], ["light", "Light"], ["dark", "Dark"]];
+  return `
       <div class="card group">
         <label class="grow">
           <span>Name</span>
@@ -577,8 +586,7 @@ function settingsHtml() {
           </div>
         </div>
       </div>
-      <p class="foot">Everything you log stays on this phone.</p>
-    </section>`;
+      <p class="foot">Everything you log stays on this phone.</p>`;
 }
 
 /* ---------- picking the plan ---------- */
@@ -606,6 +614,11 @@ root.addEventListener("input", (e) => {
     prefs.name = el.value.slice(0, 40);
     savePrefs();
     meEl.innerHTML = avatarHtml();
+    if (page === "profile") {
+      const shown = prefs.name.trim() || "You";
+      main.querySelectorAll(".avatar").forEach((a) => { a.innerHTML = avatarHtml(); });
+      main.querySelectorAll(".pname, .actmeta b").forEach((b) => { b.textContent = shown; });
+    }
     return;
   }
   if (el.id === "note") {
@@ -743,9 +756,15 @@ root.addEventListener("click", (e) => {
     toTop();
     return;
   }
-  if (act === "unprofile" || act === "editprofile") {
+  if (act === "editprofile") {
+    const name = document.getElementById("name");
+    document.getElementById("profsettings")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    name?.focus({ preventScroll: true });
+    return;
+  }
+  if (act === "unprofile") {
     opened = null;
-    page = act === "editprofile" ? "settings" : before;
+    page = before;
     render();
     toTop();
     return;
