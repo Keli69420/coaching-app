@@ -336,13 +336,19 @@ export function emptyState() {
   return { v: 1, plan: null, logs: {}, tests: {} };
 }
 
+// The workout timer, like Strava's: t0 is when he pressed Start (for the time of day), ms the
+// time counted so far, run when the clock last started; no run means paused or saved.
+const TIMER_KEYS = ["t0", "ms", "run"];
+
 // Reads whatever was saved, keeps what makes sense, drops the rest.
 function cleanLog(log) {
   const vals = {};
   for (const [ik, arr] of Object.entries(log.vals || {})) {
     if (Array.isArray(arr)) vals[ik] = arr.map((v) => (Number.isFinite(v) ? v : null));
   }
-  return { date: typeof log.date === "string" ? log.date : null, vals, note: typeof log.note === "string" ? log.note : "" };
+  const out = { date: typeof log.date === "string" ? log.date : null, vals, note: typeof log.note === "string" ? log.note : "" };
+  for (const k of TIMER_KEYS) if (Number.isFinite(log[k]) && log[k] >= 0) out[k] = log[k];
+  return out;
 }
 
 export function cleanState(raw) {
@@ -389,18 +395,62 @@ export function setNote(state, session, text, today) {
 
 /* ---------- start, save, edit: same flow as Yapp ---------- */
 
-const copyLog = (log) => ({ date: log.date, vals: JSON.parse(JSON.stringify(log.vals || {})), note: log.note || "" });
+const copyLog = (log) => {
+  const out = { date: log.date, vals: JSON.parse(JSON.stringify(log.vals || {})), note: log.note || "" };
+  if (log.t0 != null) out.t0 = log.t0;
+  if (log.ms != null) out.ms = log.ms;
+  return out;
+};
 
 // Start: an empty log dated today. A session's date is the day he started it.
-export function startSession(state, session, today) {
-  if (!state.logs[session.key]) state.logs[session.key] = { date: today, vals: {}, note: "" };
+// With `now` (ms since 1970) the clock starts too.
+export function startSession(state, session, today, now) {
+  if (!state.logs[session.key]) {
+    state.logs[session.key] = { date: today, vals: {}, note: "" };
+    if (Number.isFinite(now)) Object.assign(state.logs[session.key], { t0: now, ms: 0, run: now });
+  }
   return state;
 }
 
+/* ---------- the clock: counts while running, keeps going with the app closed, like Strava ---------- */
+
+export const elapsed = (log, now) => (log?.ms || 0) + (log?.run != null ? Math.max(0, now - log.run) : 0);
+export const hasClock = (log) => log?.t0 != null;
+
+export function pauseClock(log, now) {
+  if (log?.run == null) return;
+  log.ms = elapsed(log, now);
+  delete log.run;
+}
+
+export function resumeClock(log, now) {
+  if (hasClock(log) && log.run == null) log.run = now;
+}
+
+// "12:05", "1:02:09".
+export function fmtClock(ms) {
+  const t = Math.floor(Math.max(0, ms) / 1000);
+  const h = Math.floor(t / 3600);
+  const m = Math.floor((t % 3600) / 60);
+  const sec = String(t % 60).padStart(2, "0");
+  return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
+}
+
+// "45s", "52m 10s", "1h 2m": how Strava writes a workout's time.
+export function fmtDuration(ms) {
+  const t = Math.floor(Math.max(0, ms) / 1000);
+  const h = Math.floor(t / 3600);
+  const m = Math.floor((t % 3600) / 60);
+  if (h) return `${h}h ${m}m`;
+  return m ? `${m}m ${t % 60}s` : `${t}s`;
+}
+
 // Save: only with at least one number in it. Returns false when there's nothing to save.
-export function finishSession(state, session) {
+// The clock stops at the time it shows.
+export function finishSession(state, session, now) {
   const log = state.logs[session.key];
   if (!hasValues(log)) return false;
+  if (Number.isFinite(now)) pauseClock(log, now);
   log.done = true;
   delete log.saved;
   return true;
@@ -596,4 +646,35 @@ export function cleanPrefs(raw) {
     theme: THEMES.includes(p.theme) ? p.theme : "system",
     name: typeof p.name === "string" ? p.name.trim().slice(0, 40) : "",
   };
+}
+
+/* ---------- activities: every saved workout, newest first, like Strava's ---------- */
+
+// Strava names an activity after the time of day: "Evening Legs".
+export function partOfDay(hour) {
+  if (hour >= 5 && hour < 12) return "Morning";
+  if (hour >= 12 && hour < 17) return "Afternoon";
+  if (hour >= 17 && hour < 22) return "Evening";
+  return "Night";
+}
+
+// Saved workouts only (one being edited still counts). `sessions` is every plan's.
+// `hourOf` turns t0 into the phone's local hour; passed in so tests don't depend on the clock.
+export function activities(sessions, logs, hourOf = (t) => new Date(t).getHours()) {
+  const out = [];
+  for (const s of sessions) {
+    const log = logs?.[s.key];
+    if (!log?.date || !(log.done || log.saved) || !hasValues(log)) continue;
+    const { sets, records } = sessionSummary(sessions, logs, s);
+    out.push({
+      key: s.key,
+      title: log.t0 != null ? `${partOfDay(hourOf(log.t0))} ${s.day}` : s.day,
+      date: log.date,
+      t0: log.t0 ?? null,
+      ms: log.ms ?? null,
+      sets,
+      prs: records.length,
+    });
+  }
+  return out.sort((a, b) => (a.date === b.date ? (b.t0 ?? 0) - (a.t0 ?? 0) : a.date < b.date ? 1 : -1));
 }

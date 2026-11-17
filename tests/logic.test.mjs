@@ -6,6 +6,7 @@ import {
   hit, fmtPrescription, ladderState, stepHistory, parseNum, emptyState, cleanState, setValue, setNote, setTest, keyOf, hasValues,
   weekStart, weeksAgo, weeksAgoLabel, weeklyTotals, exerciseStats, sparkPoints, fmtVal, fmtDate,
   startSession, finishSession, reopenSession, stopSession, deleteSession, tidyLogs, sessionSummary,
+  elapsed, pauseClock, resumeClock, fmtClock, fmtDuration, partOfDay, activities,
   allTimeTotals, cleanPrefs,
 } from "../logic.js";
 
@@ -374,4 +375,63 @@ test("settings: system theme and no name unless set", () => {
   assert.deepEqual(cleanPrefs({ theme: "dark", name: "  Test Name " }), { theme: "dark", name: "Test Name" });
   assert.deepEqual(cleanPrefs({ theme: "purple", name: 7 }), { theme: "system", name: "" });
   assert.equal(cleanPrefs({ name: "x".repeat(60) }).name.length, 40);
+});
+
+test("workout clock: runs from Start, pauses, resumes, stops at Save, survives an edit", () => {
+  const [s] = sessionsOf(TWO_DAYS.plans[0]);
+  const st = emptyState();
+  startSession(st, s, "2026-11-17", 1000);
+  const log = st.logs[s.key];
+  assert.deepEqual(log, { date: "2026-11-17", vals: {}, note: "", t0: 1000, ms: 0, run: 1000 });
+  assert.equal(elapsed(log, 61000), 60000);
+  pauseClock(log, 61000);
+  assert.equal(log.run, undefined);
+  assert.equal(elapsed(log, 999999), 60000, "paused time doesn't count");
+  resumeClock(log, 100000);
+  assert.equal(elapsed(log, 130000), 90000);
+  setValue(st, s, "liegestütze", 0, 6, "2026-11-17");
+  assert.equal(finishSession(st, s, 130000), true);
+  assert.equal(log.ms, 90000);
+  assert.equal(log.run, undefined, "saved means stopped");
+  reopenSession(st, s);
+  stopSession(st, s);
+  assert.equal(st.logs[s.key].ms, 90000, "undoing an edit keeps the saved time");
+  assert.equal(st.logs[s.key].t0, 1000);
+  const noClock = { date: "2026-11-17", vals: {}, note: "" };
+  resumeClock(noClock, 5);
+  assert.equal(noClock.run, undefined, "a workout started before the clock existed gets none");
+});
+
+test("clock and duration read like Apple Fitness and Strava", () => {
+  assert.equal(fmtClock(0), "0:00");
+  assert.equal(fmtClock(65000), "1:05");
+  assert.equal(fmtClock(3729000), "1:02:09");
+  assert.equal(fmtDuration(45000), "45s");
+  assert.equal(fmtDuration(3130000), "52m 10s");
+  assert.equal(fmtDuration(3720000), "1h 2m");
+});
+
+test("saved clock is read defensively", () => {
+  const s = cleanState({ logs: { a: { date: "2026-11-17", vals: {}, t0: 5, ms: -1, run: "x" } } });
+  assert.deepEqual(s.logs.a, { date: "2026-11-17", vals: {}, note: "", t0: 5 });
+});
+
+test("activities: saved workouts only, newest first, named after the time of day", () => {
+  const ss = sessionsOf(TWO_DAYS.plans[0]);
+  const st = emptyState();
+  const hourOf = (t) => t; // t0 stands for the hour here
+  startSession(st, ss[0], "2026-11-10", 18);
+  setValue(st, ss[0], "liegestütze", 0, 6, "2026-11-10");
+  assert.deepEqual(activities(ss, st.logs, hourOf), [], "not saved yet");
+  finishSession(st, ss[0], 18);
+  startSession(st, ss[1], "2026-11-12", 7);
+  setValue(st, ss[1], "liegestütze", 0, 8, "2026-11-12");
+  finishSession(st, ss[1], 7);
+  const list = activities(ss, st.logs, hourOf);
+  assert.deepEqual(list.map((a) => [a.title, a.date, a.sets, a.prs]), [["Morning Tag 2", "2026-11-12", 1, 1], ["Evening Tag 1", "2026-11-10", 1, 0]]);
+  reopenSession(st, ss[1]);
+  assert.equal(activities(ss, st.logs, hourOf).length, 2, "one being edited stays on the list");
+  delete st.logs[ss[0].key].t0;
+  assert.equal(activities(ss, st.logs, hourOf)[1].title, "Tag 1", "saved before the clock: just the day");
+  assert.deepEqual([4, 12, 17, 22].map(partOfDay), ["Night", "Afternoon", "Evening", "Night"]);
 });

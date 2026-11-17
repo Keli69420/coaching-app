@@ -204,6 +204,17 @@ ul { margin: 0; padding: 0; list-style: none; }
 
 /* Started: one card per exercise. */
 .items { display: grid; gap: 12px; }
+
+/* The workout clock, like recording on Strava: time in sky (the time colour), Pause beside it.
+   Paused, the time greys out and the button turns into a lime Resume. */
+.clock { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; padding: 14px 18px 16px; }
+.clock .clabel { margin-top: 0; }
+.clock .big .num { font-size: 40px; }
+.clock.paused .big { color: var(--muted); }
+.pausebtn { flex: none; display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 18px 0 15px; border-radius: 999px; background: var(--fill); color: var(--ink); font-size: 16px; font-weight: 700; }
+.pausebtn svg { width: 15px; height: 15px; fill: currentColor; }
+.pausebtn.go { background: var(--lime); color: var(--on-lime); }
+.pausebtn:active { filter: brightness(.92); }
 .item { padding: 18px; }
 .itemhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .item h3 { font-size: 20px; font-weight: 600; }
@@ -349,6 +360,21 @@ ul { margin: 0; padding: 0; list-style: none; }
 }
 .ptext { min-width: 0; }
 .back.edit { margin: 14px 0 0; padding: 0 18px; }
+
+/* His activities: each saved workout as a card, like Strava's. */
+.acts { display: grid; gap: 12px; }
+.act { display: block; width: 100%; padding: 16px 18px 18px; text-align: left; color: var(--ink); }
+.act:active { filter: brightness(.96); }
+.actwho { display: flex; align-items: center; gap: 10px; }
+.avatar.sm { width: 36px; height: 36px; font-size: 16px; }
+.actmeta { display: flex; flex-direction: column; min-width: 0; }
+.actmeta b { font-size: 15px; font-weight: 600; }
+.actmeta small { font-size: 13px; color: var(--muted); }
+.acttitle { display: block; margin-top: 12px; font-size: 20px; font-weight: 700; }
+.actstats { display: flex; gap: 28px; margin-top: 10px; }
+.actstats > span { display: flex; flex-direction: column; }
+.actstats small { font-size: 13px; color: var(--muted); }
+.actstats .num { font-size: 20px; font-weight: 700; color: var(--hue-ink); }
 .pname { font-size: 28px; font-weight: 700; line-height: 1.15; overflow-wrap: anywhere; }
 .psub { margin-top: 2px; font-size: 15px; color: var(--muted); }
 .totals { display: grid; grid-template-columns: repeat(3, 1fr); padding: 16px 0; }

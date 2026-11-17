@@ -3,7 +3,7 @@ import {
   ladderState, stepHistory, parseNum, todayIso, fmtDate, cleanState, emptyState, setValue, setNote, setTest, hasValues,
   weeklyTotals, exerciseStats, sparkPoints, weeksAgo, weeksAgoLabel, fmtVal,
   startSession, finishSession, reopenSession, stopSession, deleteSession, tidyLogs, sessionSummary,
-  allTimeTotals, cleanPrefs,
+  allTimeTotals, cleanPrefs, elapsed, hasClock, pauseClock, resumeClock, fmtClock, fmtDuration, activities,
 } from "./logic.js";
 
 // The coach's plan. One file holds the ladder and every starting level (Plan A, B, C...).
@@ -33,6 +33,7 @@ let today = todayIso();
 // "profile" has no tab: his picture top right opens it, like Apple Fitness. Always opens on today.
 let page = "today";
 let before = "today"; // the page the profile was opened from, for its back button
+let opened = null; // on the profile: the saved workout opened from his activities (its key)
 let program = null; // { ladder, plans, errors }
 let loadError = "";
 let state = tidyLogs(load(), today);
@@ -120,6 +121,14 @@ const longDate = (iso) => {
   return `${WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]}, ${fmtDate(iso)}`;
 };
 const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+const pad2 = (n) => String(n).padStart(2, "0");
+const hhmm = (t) => { const d = new Date(t); return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
+// "Today", "Yesterday", else "Tuesday, 17 Nov", like Strava's activity dates.
+const dayWord = (iso) => {
+  if (iso === today) return "Today";
+  const [y, m, d] = today.split("-").map(Number);
+  return iso === todayIso(new Date(y, m - 1, d - 1)) ? "Yesterday" : longDate(iso);
+};
 const capital = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
 const plan = () => program?.plans.find((p) => p.id === state.plan) ?? null;
@@ -127,6 +136,10 @@ const sessions = () => sessionsOf(plan());
 const current = () => currentIndex(sessions(), state.logs, today);
 // The workout on screen: one opened from the Plan tab, otherwise today's.
 const shownIndex = () => {
+  if (page === "profile" && opened) {
+    const i = sessions().findIndex((s) => s.key === opened);
+    if (i >= 0) return i;
+  }
   if (page !== "plan" || viewing == null) return current();
   return Math.max(0, Math.min(viewing, sessions().length - 1));
 };
@@ -159,7 +172,7 @@ function render() {
     : `<button type="button" class="chip${pickerOpen ? " on" : ""}" data-act="picker" aria-expanded="${pickerOpen}" aria-label="Plan ${esc(picked.id)}. Tap to switch.">Plan ${esc(picked.id)}</button>`;
   if (pickerOpen || !picked) main.innerHTML = pickerHtml(picked);
   else if (page === "progress") main.innerHTML = progressHtml();
-  else if (page === "profile") main.innerHTML = profileHtml();
+  else if (page === "profile") main.innerHTML = opened ? sessionHtml(shownIndex()) : profileHtml();
   else if (page === "settings") main.innerHTML = settingsHtml();
   else if (page === "plan" && viewing == null) main.innerHTML = weekHtml();
   else main.innerHTML = sessionHtml(shownIndex());
@@ -174,16 +187,17 @@ function sessionHtml(i) {
   const s = list[i];
   const log = state.logs[s.key];
   const done = i === list.length - 1 && planDone(list, state.logs, today);
-  const fromPlan = page === "plan";
+  // Opened from the Plan tab or from his activities: a back button instead of the week label.
+  const backTo = page === "plan" ? s.week : page === "profile" ? "Profile" : "";
   return `
     <section class="session">
-      ${fromPlan ? `<button type="button" class="back" data-act="back">${LEFT}<span>${esc(s.week)}</span></button>` : ""}
+      ${backTo ? `<button type="button" class="back" data-act="back">${LEFT}<span>${esc(backTo)}</span></button>` : ""}
       <header class="head">
-        ${fromPlan ? "" : `<p class="eyebrow">${esc(s.week)}</p>`}
+        ${backTo ? "" : `<p class="eyebrow">${esc(s.week)}</p>`}
         <h2 class="title">${esc(s.day)}</h2>
       </header>
-      ${done ? `<p class="banner">That was the whole plan. Time for a new test under Progress.</p>` : ""}
-      ${!log ? ghostHtml(s) : log.done ? savedHtml(s, list[i + 1]) : activeHtml(s, log)}
+      ${done && page !== "profile" ? `<p class="banner">That was the whole plan. Time for a new test under Progress.</p>` : ""}
+      ${!log ? ghostHtml(s) : log.done ? savedHtml(s, page === "profile" ? null : list[i + 1]) : activeHtml(s, log)}
     </section>`;
 }
 
@@ -196,8 +210,26 @@ function ghostHtml(s) {
     <button type="button" class="cta" data-act="start">Start workout</button>`;
 }
 
+const PAUSE = `<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="2" width="3.6" height="12" rx="1.2"/><rect x="9.4" y="2" width="3.6" height="12" rx="1.2"/></svg>`;
+const PLAY = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 2.6v10.8c0 .8.9 1.3 1.6.8l8-5.4c.6-.4.6-1.2 0-1.6l-8-5.4c-.7-.5-1.6 0-1.6.8z"/></svg>`;
+
+// The workout clock, like recording on Strava: it starts with Start, Pause stops it, Save ends it.
+// It isn't shown while editing a saved workout: that keeps the time it was saved with.
+function clockHtml(log) {
+  const running = log.run != null;
+  return `
+    <div class="card clock${running ? "" : " paused"}">
+      <div>
+        <p class="clabel">${running ? "Time" : "Paused"}</p>
+        <p class="big sky"><b class="num" id="clocktime">${fmtClock(elapsed(log, Date.now()))}</b></p>
+      </div>
+      <button type="button" class="pausebtn${running ? "" : " go"}" data-act="${running ? "pause" : "resume"}">${running ? PAUSE : PLAY}<span>${running ? "Pause" : "Resume"}</span></button>
+    </div>`;
+}
+
 function activeHtml(s, log) {
   return `
+    ${hasClock(log) && !log.saved ? clockHtml(log) : ""}
     <div class="items">${s.items.map((it) => itemHtml(it, log)).join("")}</div>
     <textarea class="card note" id="note" rows="2" placeholder="Notes" aria-label="Notes">${esc(log.note ?? "")}</textarea>
     <button type="button" class="cta" data-act="finish">Save workout</button>
@@ -208,7 +240,9 @@ function activeHtml(s, log) {
 // Saved: a summary card instead of the fields. Edit opens them again.
 function savedHtml(s, next) {
   const { sets, records } = sessionSummary(program.plans.flatMap(sessionsOf), state.logs, s);
+  const log = state.logs[s.key];
   const bits = [count(sets, "set", "sets")];
+  if (log?.ms != null) bits.unshift(fmtDuration(log.ms));
   if (records.length) bits.push(count(records.length, "PR", "PRs"));
   const nextName = next ? (next.week === s.week ? next.day : `${next.week} · ${next.day}`) : "";
   return `
@@ -485,6 +519,7 @@ function profileHtml() {
   const steps = ladderState(program.ladder, state.logs, state.tests).steps;
   const goal = steps.length ? steps[steps.length - 1].name : "";
   const sub = [goal && `Goal: ${goal}`, all.since && `since ${fmtDate(all.since)}`].filter(Boolean).join(" · ");
+  const acts = activities(program.plans.flatMap(sessionsOf), state.logs);
   return `
     <section class="you">
       <button type="button" class="back" data-act="unprofile">${LEFT}<span>${PAGE_NAMES[before] || "Back"}</span></button>
@@ -501,7 +536,28 @@ function profileHtml() {
         <div class="gold"><b class="num">${all.prs}</b><span>${all.prs === 1 ? "PR" : "PRs"}</span></div>
       </div>
       <button type="button" class="back edit" data-act="editprofile">Edit profile</button>
+      <h2 class="sect">Activities</h2>
+      ${acts.length ? `<ul class="acts">${acts.map(activityHtml).join("")}</ul>` : `<p class="empty">Saved workouts show up here.</p>`}
     </section>`;
+}
+
+// One saved workout as a card, like an activity on Strava: who, when, its name, then its numbers.
+function activityHtml(a) {
+  const when = `${dayWord(a.date)}${a.t0 != null ? ` at ${hhmm(a.t0)}` : ""}`;
+  const canOpen = sessions().some((s) => s.key === a.key);
+  const stat = (label, value, hue) => `<span class="${hue}"><small>${label}</small><b class="num">${esc(value)}</b></span>`;
+  const body = `
+    <span class="actwho">
+      <span class="avatar sm">${avatarHtml()}</span>
+      <span class="actmeta"><b>${esc(prefs.name.trim() || "You")}</b><small>${esc(when)}</small></span>
+    </span>
+    <span class="acttitle">${esc(a.title)}</span>
+    <span class="actstats">
+      ${a.ms != null ? stat("Time", fmtDuration(a.ms), "sky") : ""}${stat("Sets", a.sets, "lime")}${stat("PRs", a.prs, "gold")}
+    </span>`;
+  return `<li>${canOpen
+    ? `<button type="button" class="card act" data-act="activity" data-key="${esc(a.key)}">${body}</button>`
+    : `<div class="card act">${body}</div>`}</li>`;
 }
 
 function settingsHtml() {
@@ -675,20 +731,36 @@ root.addEventListener("click", (e) => {
   }
   if (act === "back") {
     flush();
-    viewing = null;
+    if (page === "profile") opened = null;
+    else viewing = null;
+    render();
+    toTop();
+    return;
+  }
+  if (act === "activity") {
+    opened = btn.dataset.key;
     render();
     toTop();
     return;
   }
   if (act === "unprofile" || act === "editprofile") {
+    opened = null;
     page = act === "editprofile" ? "settings" : before;
     render();
     toTop();
     return;
   }
   const s = sessions()[shownIndex()];
+  if (act === "pause" || act === "resume") {
+    const log = state.logs[s.key];
+    if (act === "pause") pauseClock(log, Date.now());
+    else resumeClock(log, Date.now());
+    persist();
+    render();
+    return;
+  }
   if (act === "start") {
-    startSession(state, s, today);
+    startSession(state, s, today, Date.now());
     persist();
     render();
     // Ask the browser not to clear this site's storage when space runs low.
@@ -696,15 +768,16 @@ root.addEventListener("click", (e) => {
   } else if (act === "finish") {
     flush();
     const log = state.logs[s.key];
-    const before = log.saved;
-    if (!finishSession(state, s)) {
+    const kept = { saved: log.saved, ms: log.ms, run: log.run };
+    if (!finishSession(state, s, Date.now())) {
       document.getElementById("finisherr").textContent = "Nothing logged yet.";
       return;
     }
     // Only say it's saved if it really is.
     if (!persist()) {
       log.done = false;
-      if (before) log.saved = before;
+      if (kept.saved) log.saved = kept.saved;
+      if (kept.run != null) Object.assign(log, { ms: kept.ms, run: kept.run });
       document.getElementById("finisherr").textContent = "Couldn't save. Try again.";
       return;
     }
@@ -724,6 +797,7 @@ root.addEventListener("click", (e) => {
   } else if (act === "delete") {
     if (!armed(btn, "Tap again to delete")) return;
     deleteSession(state, s);
+    if (page === "profile") opened = null; // back to his activities
     persist();
     render();
     toTop();
@@ -733,6 +807,7 @@ root.addEventListener("click", (e) => {
 // His picture top right opens his profile; tapping it there again goes back.
 meEl.addEventListener("click", () => {
   flush();
+  opened = null;
   if (page === "profile") page = before;
   else { before = page; page = "profile"; }
   testing = null;
@@ -748,6 +823,7 @@ pagesEl.addEventListener("click", (e) => {
   flush();
   page = btn.dataset.page;
   viewing = null;
+  opened = null;
   testing = null;
   render();
   toTop();
@@ -774,6 +850,14 @@ document.addEventListener("visibilitychange", () => {
 window.addEventListener("pagehide", flush);
 window.addEventListener("pageshow", checkRollover);
 setInterval(checkRollover, 60000);
+
+// The clock on screen ticks once a second. The time itself comes from the saved start and
+// pause times, so it stays right with the app closed or the phone locked.
+setInterval(() => {
+  const el = document.getElementById("clocktime");
+  const s = el && sessions()[shownIndex()];
+  if (s && state.logs[s.key]) el.textContent = fmtClock(elapsed(state.logs[s.key], Date.now()));
+}, 1000);
 
 /* ---------- start ---------- */
 
