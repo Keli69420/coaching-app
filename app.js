@@ -279,15 +279,15 @@ function trendHtml(step, finished) {
   const sec = step.unit === "sec" ? " s" : "";
   let big;
   if (finished) big = `<b class="num">${step.best}</b><span>${sec ? "s · " : ""}goal reached</span>`;
-  else if (step.best == null) big = `<b class="num none">0</b><span>Tap a ring to test</span>`;
+  else if (step.best == null) big = `<b class="num">${step.target}</b><span>${sec ? "s " : ""}to go</span>`;
   else big = `<b class="num">${step.target - step.best}</b><span>${sec ? "s " : ""}to go</span>`;
   return `
     <div class="card trend">
       <div class="tnum">
-        <p class="tname">${esc(step.name)}${step.best != null && !finished ? ` · PR ${step.best}${sec}` : ""}</p>
+        <p class="tname">${esc(step.name)}${step.best == null ? " · tap to test" : !finished ? ` · PR ${step.best}${sec}` : ""}</p>
         <p class="tbig">${big}</p>
       </div>
-      <div class="tchart">${chartSvg(hist, step.target, !finished)}</div>
+      ${hist.length ? `<div class="tchart">${chartSvg(hist, step.target, !finished)}</div>` : ""}
     </div>`;
 }
 
