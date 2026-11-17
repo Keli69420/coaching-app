@@ -46,7 +46,7 @@ Pick a weight where the last 2 reps are hard but clean. Write the weight in the 
 
 ### Push
 Warm-up 5 min: arm and wrist circles, 10 scapular pull-ups. 2 min rest between sets.
-- Wall Handstand: 3 x 10s | belly to the wall, only walk up as far as feels safe
+- Wall Handstand: 3 x 10s | face the wall, only walk up as far as feels safe
 - Dips: 3 x 3 | shoulders below the elbows
 - Push-ups: 4 x 6 | chest to the floor, stop 2 reps before failure
 - Pike Push-ups: 3 x 5 | head down between the hands
@@ -70,7 +70,7 @@ Warm up with Keli. 2 to 3 min rest between pull-up sets: clean reps beat more re
 
 ### Push
 Warm-up 5 min: arm and wrist circles, 10 scapular pull-ups. 2 min rest between sets.
-- Wall Handstand: 3 x 15s | belly to the wall
+- Wall Handstand: 3 x 15s | face the wall
 - Dips: 4 x 3
 - Push-ups: 4 x 8 | stop 2 reps before failure
 - Pike Push-ups: 3 x 6
@@ -94,7 +94,7 @@ Warm up with Keli. 2 to 3 min rest between pull-up sets.
 
 ### Push
 Warm-up 5 min: arm and wrist circles, 10 scapular pull-ups. 2 min rest between sets.
-- Wall Handstand: 3 x 20s | belly to the wall
+- Wall Handstand: 3 x 20s | face the wall
 - Dips: 3 x 5
 - Push-ups: 4 x 10 | stop 2 reps before failure
 - Pike Push-ups: 3 x 8
