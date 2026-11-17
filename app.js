@@ -23,14 +23,16 @@ let WEEKS = MIN_WEEKS;
 const root = document.querySelector(".app");
 const main = document.getElementById("main");
 const chipEl = document.getElementById("chip");
+const meEl = document.getElementById("me");
 const pagesEl = document.getElementById("pages");
 const statusEl = document.getElementById("status");
 
 let today = todayIso();
 // Four tabs (Keli, 17 Nov): "today" shows only today's workout, "plan" this week's workouts,
-// "progress" the ladder and his numbers, "you" his profile and settings, like Strava's You.
-// Always opens on today.
+// "progress" the ladder and his numbers, "settings" his name and light/dark.
+// "profile" has no tab: his picture top right opens it, like Apple Fitness. Always opens on today.
 let page = "today";
+let before = "today"; // the page the profile was opened from, for its back button
 let program = null; // { ladder, plans, errors }
 let loadError = "";
 let state = tidyLogs(load(), today);
@@ -136,6 +138,10 @@ function render() {
   }
   const broken = Boolean(loadError || !program || program.errors.length);
   pagesEl.hidden = broken || !plan() || pickerOpen;
+  meEl.hidden = pagesEl.hidden;
+  meEl.innerHTML = avatarHtml();
+  if (page === "profile") meEl.setAttribute("aria-current", "page");
+  else meEl.removeAttribute("aria-current");
   if (broken) {
     chipEl.innerHTML = "";
     if (loadError) main.innerHTML = msgHtml("No plan yet", `<p>${esc(loadError)}</p>`);
@@ -153,7 +159,8 @@ function render() {
     : `<button type="button" class="chip${pickerOpen ? " on" : ""}" data-act="picker" aria-expanded="${pickerOpen}" aria-label="Plan ${esc(picked.id)}. Tap to switch.">Plan ${esc(picked.id)}</button>`;
   if (pickerOpen || !picked) main.innerHTML = pickerHtml(picked);
   else if (page === "progress") main.innerHTML = progressHtml();
-  else if (page === "you") main.innerHTML = youHtml();
+  else if (page === "profile") main.innerHTML = profileHtml();
+  else if (page === "settings") main.innerHTML = settingsHtml();
   else if (page === "plan" && viewing == null) main.innerHTML = weekHtml();
   else main.innerHTML = sessionHtml(shownIndex());
 }
@@ -462,26 +469,29 @@ const redrawLadder = () => {
   if (el) el.innerHTML = ladderHtml();
 };
 
-/* ---------- You: profile and settings, like Strava's You ---------- */
+/* ---------- his profile (from the picture top right) and Settings (the last tab) ---------- */
 
-const PERSON = `<svg viewBox="0 0 24 24" width="34" height="34" aria-hidden="true"><circle cx="12" cy="8.5" r="4" fill="currentColor"/><path d="M4.5 20.5c1.4-3.6 4.2-5.5 7.5-5.5s6.1 1.9 7.5 5.5z" fill="currentColor"/></svg>`;
+const PERSON = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="4" fill="currentColor"/><path d="M4.5 20.5c1.4-3.6 4.2-5.5 7.5-5.5s6.1 1.9 7.5 5.5z" fill="currentColor"/></svg>`;
+// One place draws his picture, top right and on the profile: his initial, or a person until he
+// types a name. A profile picture (on the Later list) goes here as an <img>, and shows in both.
 const avatarHtml = () => {
   const n = prefs.name.trim();
   return n ? esc(n.charAt(0).toUpperCase()) : PERSON;
 };
+const PAGE_NAMES = { today: "Today", plan: "Plan", progress: "Progress", settings: "Settings" };
 
-function youHtml() {
+function profileHtml() {
   const all = allTimeTotals(program.plans.flatMap(sessionsOf), state.logs);
   const steps = ladderState(program.ladder, state.logs, state.tests).steps;
   const goal = steps.length ? steps[steps.length - 1].name : "";
   const sub = [goal && `Goal: ${goal}`, all.since && `since ${fmtDate(all.since)}`].filter(Boolean).join(" · ");
-  const themes = [["system", "System"], ["light", "Light"], ["dark", "Dark"]];
   return `
     <section class="you">
+      <button type="button" class="back" data-act="unprofile">${LEFT}<span>${PAGE_NAMES[before] || "Back"}</span></button>
       <div class="profile">
-        <span class="avatar" id="avatar">${avatarHtml()}</span>
+        <span class="avatar">${avatarHtml()}</span>
         <div class="ptext">
-          <h2 class="pname" id="pname">${esc(prefs.name.trim() || "You")}</h2>
+          <h2 class="pname">${esc(prefs.name.trim() || "You")}</h2>
           ${sub ? `<p class="psub">${esc(sub)}</p>` : ""}
         </div>
       </div>
@@ -490,7 +500,15 @@ function youHtml() {
         <div class="lime"><b class="num">${all.sets}</b><span>Sets</span></div>
         <div class="gold"><b class="num">${all.prs}</b><span>${all.prs === 1 ? "PR" : "PRs"}</span></div>
       </div>
-      <h2 class="sect">Settings</h2>
+      <button type="button" class="back edit" data-act="editprofile">Edit profile</button>
+    </section>`;
+}
+
+function settingsHtml() {
+  const themes = [["system", "System"], ["light", "Light"], ["dark", "Dark"]];
+  return `
+    <section class="settings">
+      <header class="head"><h2 class="title">Settings</h2></header>
       <div class="card group">
         <label class="grow">
           <span>Name</span>
@@ -527,12 +545,11 @@ function pickerHtml(picked) {
 
 root.addEventListener("input", (e) => {
   const el = e.target;
-  // His name: only the profile header is redrawn, so the keyboard stays up.
+  // His name: only the picture top right is redrawn, so the keyboard stays up.
   if (el.id === "name") {
     prefs.name = el.value.slice(0, 40);
     savePrefs();
-    document.getElementById("pname").textContent = prefs.name.trim() || "You";
-    document.getElementById("avatar").innerHTML = avatarHtml();
+    meEl.innerHTML = avatarHtml();
     return;
   }
   if (el.id === "note") {
@@ -663,6 +680,12 @@ root.addEventListener("click", (e) => {
     toTop();
     return;
   }
+  if (act === "unprofile" || act === "editprofile") {
+    page = act === "editprofile" ? "settings" : before;
+    render();
+    toTop();
+    return;
+  }
   const s = sessions()[shownIndex()];
   if (act === "start") {
     startSession(state, s, today);
@@ -705,6 +728,16 @@ root.addEventListener("click", (e) => {
     render();
     toTop();
   }
+});
+
+// His picture top right opens his profile; tapping it there again goes back.
+meEl.addEventListener("click", () => {
+  flush();
+  if (page === "profile") page = before;
+  else { before = page; page = "profile"; }
+  testing = null;
+  render();
+  toTop();
 });
 
 // Tapping the tab you're on goes back to its start, like most apps.
