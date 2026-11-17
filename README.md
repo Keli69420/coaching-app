@@ -1,11 +1,17 @@
 # Pathletics
 
-Two tabs for a client training toward a goal, switched at the bottom like Yapp.
+Three tabs for a client training toward a goal, switched at the bottom: **Today**, **Plan**, **You**.
 
-**The look** (14 Nov, from reference shots Keli sent; the name with fading copies above and below it in the header and on the icon since 17 Nov, after a "FOCUS" shot): near-black with a faint dot grid, frosted dark cards, saturated glow cards (violet, pink, blue, teal, orange), dials as rings of ticks, thin geometric text and numbers (Outfit; the dot-matrix numbers went on 15 Nov, Keli didn't like them).
+**The look** (17 Nov, Keli: "use Strava as example… I like the layout and the simpleness, I don't like the colours and so much text"): plain light or dark screens (it follows the phone), white or near-black cards, one brand colour, few words, big numbers. Before that it was near-black with glow cards in five colours (14–17 Nov).
 
-- **Workout** (opens here): **today's session** from the coach's plan, nothing else. A dot per session for the whole plan. Like Yapp, he **starts** the session (until then it's a list of what's coming and a Start button), types into one card per exercise with a disc per set, and **saves** it. Each exercise card has its own colour (violet, pink, blue, teal, orange); a hit set turns white and the card glows brighter in its colour as sets get hit. Saved, the session is a summary card (sets, new PRs, what's next) with Edit to change it and "Delete workout" (two taps) to remove it.
-- **Progress**: the **ladder** as three tiles with a tick dial each, showing how close he is (for the first client: pull-ups → chest-to-bar → muscle-up) and a trend card for the step he's on; tap a dial to type a test. Below it, like Yapp's Progress page: this week's workouts and sets against last week, sets per week as columns of dots, and one card per exercise with his record, this week against the last week he did it, and a line of his best per week.
+- **Pathletics pink** `#E0218A` is the brand, the way orange is Strava's. It marks what you can tap and what you've done: buttons, hit sets, the progress rings, the active tab. Nothing else is pink.
+- **Gold** is for PRs only (the medal).
+- Everything else is grey. Text is Outfit. The name keeps its fading copies in the header and on the icon (since 17 Nov, after a "FOCUS" shot).
+- The rules are written at the top of `styles.css`; changing the brand colour is one line there.
+
+- **Today** (opens here): **today's workout** from the coach's plan, nothing else. Like Yapp, he **starts** it (until then it's a list of what's coming and a Start button), types into one card per exercise with a disc per set, and **saves** it. A hit set turns pink; a finished exercise gets a pink tick. Saved, it's a summary card (sets, new PRs with medals, what's next) with Edit and "Delete workout" (two taps).
+- **Plan**: **this week's** workouts as a list, each marked done, today, up next or missed, with a bar for how much of the week is done. Tap one to see it or log it.
+- **You**: the **ladder** as three rings showing how close he is (for the first client: pull-ups → chest-to-bar → muscle-up) and a trend card for the step he's on; tap a ring to type a test. Below: this week's workouts and sets against last week, sets per week as bars, and one row per exercise with his record and a line of his best per week.
 
 **Everything is in English** (Keli, 17 Nov): the screen, the plan-file error messages and the plan itself. From 14 to 17 Nov it was in German; the plan reader still takes German units (`Sek`, `Wdh`).
 
@@ -15,7 +21,7 @@ The coach's plan is a **text file**, not code. Client three with the same goal n
 
 Open the link in Safari, then **⋯ → Share → View More → Add to Home Screen → Add** (leave "Open as Web App" on). Do this **before logging anything**, then always open it from the home-screen icon. The home-screen app and Safari keep separate data (found on Yapp).
 
-First open: on Progress, tap each ladder step and type the test result. With one plan in the file it is picked for him and there's no plan chip. That's the whole setup.
+First open: on **You**, tap each ladder ring and type the test result. With one plan in the file it is picked for him and there's no plan chip. That's the whole setup.
 
 ## Where things live
 
@@ -61,10 +67,10 @@ It prints every plan as the app will read it and refuses typos with a line numbe
 
 - **Which session opens:** one he started today; otherwise the one after the furthest session he has logged anything in (so a skipped day doesn't pin the app to it); otherwise the first. `currentIndex()` in `logic.js`.
 - **A session's date** is the day he started it. Fixing an old number later doesn't move it.
-- **Start, save, edit** work like Yapp: Start makes an empty session, Save needs at least one number, Edit keeps a copy so "Stop editing" puts the saved numbers back, and "Stop workout" on a new session throws it away (both two taps). A session started on an earlier day with nothing typed is dropped when the app opens. Saving is a summary, not a gate: the dots, the ladder and Progress count every number he typed, saved or not, like Yapp. A PR on the saved card has to beat every earlier day for that exercise. `startSession()` to `tidyLogs()` and `sessionSummary()` in `logic.js`.
+- **Start, save, edit** work like Yapp: Start makes an empty session, Save needs at least one number, Edit keeps a copy so "Stop editing" puts the saved numbers back, and "Stop workout" on a new session throws it away (both two taps). A session started on an earlier day with nothing typed is dropped when the app opens. Saving is a summary, not a gate: the Plan list, the ladder and You count every number he typed, saved or not, like Yapp. A PR on the saved card has to beat every earlier day for that exercise. `startSession()` to `tidyLogs()` and `sessionSummary()` in `logic.js`.
 - **The ladder:** each step's best is the higher of (a) a test typed in by tapping the step and (b) any logged set of an exercise with exactly that step's name, capitals ignored. So "Negative pull-ups" never counts as a pull-up. One test per step per day; typing again the same day replaces it, an empty one removes it. `ladderState()` in `logic.js`.
 - **Hit:** at least the bottom of the goal; any number counts for "max". A hit disc turns white.
-- **Progress:** weeks run Monday to Sunday. A workout counts in the week of its date once it has a number in it. Exercise cards match by name and unit across days and plans, and only count logged sets (tests move the rings, not the cards). The charts start at his first logged week, at least 4 weeks and at most 8 back. `weeklyTotals()` and `exerciseStats()` in `logic.js`.
+- **You:** weeks run Monday to Sunday. A workout counts in the week of its date once it has a number in it. Exercise cards match by name and unit across days and plans, and only count logged sets (tests move the rings, not the cards). The charts start at his first logged week, at least 4 weeks and at most 8 back. `weeklyTotals()` and `exerciseStats()` in `logic.js`.
 - **Switching plan** keeps everything: logs are stored per plan and day, and the ladder counts all of them.
 - **Logs are keyed by plan, week title and day title,** and exercises by name. Renaming a week or day in the plan file after he has logged it hides those logs from the session (the ladder still counts them). Adding or reordering exercises is safe.
 
@@ -75,7 +81,7 @@ It prints every plan as the app will read it and refuses typos with a line numbe
 | The plan, the ladder, the targets | `plans/muscle-up.md` (via the vault copy) |
 | How the plan file is read, which session opens, the ladder rule | `logic.js` |
 | The screen | `app.js` |
-| Colours, fonts | top of `styles.css` |
+| Colours, fonts, the design rules | top of `styles.css` (`--brand` is the pink) |
 | App name | `index.html` (title, apple-mobile-web-app-title, h1) and `manifest.webmanifest` |
 | Icon | `tools/icon.html` draws it, `python3 -I tools/make_icon.py` saves `icon-180.png` and `icon-512.png` (open the link it prints) |
 

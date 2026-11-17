@@ -1,5 +1,5 @@
 import {
-  parsePlan, sessionsOf, currentIndex, planDone, sessionComplete, hit, fmtTarget, fmtPrescription,
+  parsePlan, sessionsOf, currentIndex, planDone, hit, fmtTarget, fmtPrescription,
   ladderState, stepHistory, parseNum, todayIso, fmtDate, cleanState, emptyState, setValue, setNote, setTest, hasValues,
   weeklyTotals, exerciseStats, sparkPoints, weeksAgo, weeksAgoLabel, fmtVal,
   startSession, finishSession, reopenSession, stopSession, deleteSession, tidyLogs, sessionSummary,
@@ -11,7 +11,7 @@ const PLAN_URL = "plans/muscle-up.md";
 const KEY = "coach.v1";
 const SAVE_DELAY_MS = 300;
 const ARMED_MS = 3000; // how long a "tap again to…" button waits for the second tap
-// How far back the Progress tab looks: from his first logged week, at least 4 weeks, at most 8,
+// How far back the You tab looks: from his first logged week, at least 4 weeks, at most 8,
 // so a four-week plan doesn't open on a chart that is mostly empty.
 const MIN_WEEKS = 4;
 const MAX_WEEKS = 8;
@@ -19,18 +19,18 @@ let WEEKS = MIN_WEEKS;
 
 const root = document.querySelector(".app");
 const main = document.getElementById("main");
-const ladderEl = document.getElementById("ladder");
 const chipEl = document.getElementById("chip");
-const sheetEl = document.querySelector(".sheet");
 const pagesEl = document.getElementById("pages");
 const statusEl = document.getElementById("status");
 
 let today = todayIso();
-let page = "training"; // or "progress". Always opens on training.
+// Three tabs (Keli, 17 Nov): "today" shows only today's workout, "plan" this week's
+// workouts, "you" the ladder and progress. Always opens on today.
+let page = "today";
 let program = null; // { ladder, plans, errors }
 let loadError = "";
 let state = tidyLogs(load(), today);
-let viewing = null; // index of the session on screen; null means the one the app picks
+let viewing = null; // on the Plan tab: the workout opened from the week, or null for the week itself
 let pickerOpen = false;
 let testing = null; // ladder step key while its test field is open
 let pending = false;
@@ -71,39 +71,25 @@ const flush = () => { if (pending) persist(); };
 /* ---------- drawing helpers ---------- */
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const chev = (d) => `<svg viewBox="0 0 10 16" width="8" height="13" aria-hidden="true"><path d="${d}" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-const RIGHT = chev("M2.5 2 8 8l-5.5 6");
-const TICK = `<svg viewBox="0 0 16 12" width="16" height="12" aria-hidden="true"><path d="M1.5 6.5 6 10.5 14.5 1.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-const LEFT = chev("M7.5 2 2 8l5.5 6");
+const stroke = 'fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"';
+const RIGHT = `<svg class="chev" viewBox="0 0 10 16" width="8" height="13" aria-hidden="true"><path d="M2.5 2 8 8l-5.5 6" ${stroke}/></svg>`;
+const LEFT = `<svg class="chev" viewBox="0 0 10 16" width="8" height="13" aria-hidden="true"><path d="M7.5 2 2 8l5.5 6" ${stroke}/></svg>`;
+const TICK = `<svg class="tick" viewBox="0 0 16 12" width="14" height="11" aria-hidden="true"><path d="M1.5 6.5 6 10.5 14.5 1.5" ${stroke}/></svg>`;
+// Gold is for personal records only, like a medal.
+const MEDAL = `<svg class="medal" viewBox="0 0 16 18" width="14" height="16" aria-hidden="true"><path d="M4 1h3l1.6 4.5L10.2 1h1.8L9.8 7" fill="none" stroke="var(--gold-deep)" stroke-width="1.6" stroke-linejoin="round"/><circle cx="8" cy="12" r="5" fill="var(--gold)"/></svg>`;
 
-// A dial of n ticks like a watch face; the lit ones fill clockwise from the top. share 0..1.
-// Any progress lights at least one tick, and only a full share lights them all.
-function ticks(share, size, n, len) {
-  const c = size / 2, r1 = c - 1, r0 = r1 - len;
-  const raw = Math.round(share * n);
-  const lit = share <= 0 ? 0 : share >= 1 ? n : Math.min(n - 1, Math.max(1, raw));
-  let out = "";
-  for (let k = 0; k < n; k++) {
-    const a = (k / n) * 2 * Math.PI - Math.PI / 2;
-    const xy = (r) => [(c + r * Math.cos(a)).toFixed(2), (c + r * Math.sin(a)).toFixed(2)];
-    const [x1, y1] = xy(r0), [x2, y2] = xy(r1);
-    out += `<line class="${k < lit ? "on" : "off"}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`;
-  }
-  return `<svg class="ticks" viewBox="0 0 ${size} ${size}" aria-hidden="true">${out}</svg>`;
-}
-
-// Each exercise card, and its line in the list before Start, gets one of these colours in turn.
-const HUES = 5;
-
-// A value with its number set apart from a smaller unit: "22 s", "6 reps".
+// A number with a smaller unit after it: "22 s", "6 reps".
 const numHtml = (n, unit) => `<b class="num">${esc(n)}</b><small class="unit">${unit === "sec" ? "s" : "reps"}</small>`;
+const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+const capital = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
 const plan = () => program?.plans.find((p) => p.id === state.plan) ?? null;
 const sessions = () => sessionsOf(plan());
 const current = () => currentIndex(sessions(), state.logs, today);
+// The workout on screen: one opened from the Plan tab, otherwise today's.
 const shownIndex = () => {
-  const list = sessions();
-  return viewing == null ? current() : Math.max(0, Math.min(viewing, list.length - 1));
+  if (page !== "plan" || viewing == null) return current();
+  return Math.max(0, Math.min(viewing, sessions().length - 1));
 };
 
 function render() {
@@ -113,10 +99,8 @@ function render() {
   }
   const broken = Boolean(loadError || !program || program.errors.length);
   pagesEl.hidden = broken || !plan() || pickerOpen;
-  sheetEl.classList.toggle("slim", broken || page !== "progress" || pickerOpen);
   if (broken) {
     chipEl.innerHTML = "";
-    ladderEl.innerHTML = "";
     if (loadError) main.innerHTML = msgHtml("No plan yet", `<p>${esc(loadError)}</p>`);
     else if (!program) main.innerHTML = `<p class="loading">Loading the plan…</p>`;
     else {
@@ -129,56 +113,180 @@ function render() {
   const picked = plan();
   // With one plan in the file there's nothing to switch to, so there's no chip at all.
   chipEl.innerHTML = !picked || program.plans.length === 1 ? ""
-    : `<button type="button" class="chip${pickerOpen ? " on" : ""}" data-act="picker" aria-expanded="${pickerOpen}" aria-label="Plan ${esc(picked.id)}. Tap to switch.">Plan <b>${esc(picked.id)}</b></button>`;
-  if (pickerOpen || !picked) {
-    ladderEl.innerHTML = "";
-    main.innerHTML = pickerHtml(picked);
-  } else if (page === "progress") {
-    ladderEl.innerHTML = ladderHtml();
-    main.innerHTML = progressHtml();
-  } else {
-    ladderEl.innerHTML = "";
-    main.innerHTML = `<section class="session" id="session">${sessionHtml()}</section>`;
-  }
+    : `<button type="button" class="chip${pickerOpen ? " on" : ""}" data-act="picker" aria-expanded="${pickerOpen}" aria-label="Plan ${esc(picked.id)}. Tap to switch.">Plan ${esc(picked.id)}</button>`;
+  if (pickerOpen || !picked) main.innerHTML = pickerHtml(picked);
+  else if (page === "you") main.innerHTML = youHtml();
+  else if (page === "plan" && viewing == null) main.innerHTML = weekHtml();
+  else main.innerHTML = sessionHtml(shownIndex());
 }
 
 const msgHtml = (title, body) => `<section class="msg"><h2>${esc(title)}</h2>${body}</section>`;
 
-/* ---------- the ladder: three rings and the trend of the step he's on ---------- */
+/* ---------- Today: one workout, nothing else ---------- */
+
+function sessionHtml(i) {
+  const list = sessions();
+  const s = list[i];
+  const log = state.logs[s.key];
+  const done = i === list.length - 1 && planDone(list, state.logs, today);
+  const fromPlan = page === "plan";
+  return `
+    <section class="session">
+      ${fromPlan ? `<button type="button" class="back" data-act="back">${LEFT}<span>${esc(s.week)}</span></button>` : ""}
+      <header class="head">
+        ${fromPlan ? "" : `<p class="eyebrow">${esc(s.week)}</p>`}
+        <h2 class="title">${esc(s.day)}</h2>
+      </header>
+      ${done ? `<p class="banner">That was the whole plan. Time for a new test under You.</p>` : ""}
+      ${!log ? ghostHtml(s) : log.done ? savedHtml(s, list[i + 1]) : activeHtml(s, log)}
+    </section>`;
+}
+
+// Not started yet: what's coming, and a button to start. Same as Yapp.
+function ghostHtml(s) {
+  return `
+    <ul class="card list">${s.items.map((it) => `
+      <li><span class="lname">${esc(it.name)}</span>${it.sets.length ? `<span class="rx">${esc(fmtPrescription(it))}</span>` : ""}</li>`).join("")}
+    </ul>
+    <button type="button" class="cta" data-act="start">Start workout</button>`;
+}
+
+function activeHtml(s, log) {
+  return `
+    <div class="items">${s.items.map((it) => itemHtml(it, log)).join("")}</div>
+    <textarea class="card note" id="note" rows="2" placeholder="How did it feel? Anything hurt?" aria-label="Notes">${esc(log.note ?? "")}</textarea>
+    <button type="button" class="cta" data-act="finish">Save workout</button>
+    <p class="formerr" id="finisherr" role="alert"></p>
+    <button type="button" class="quiet" data-act="stop" data-confirm="${log.saved ? "Tap again to undo edits" : "Tap again to discard"}">${log.saved ? "Stop editing" : "Stop workout"}</button>`;
+}
+
+// Saved: a summary card instead of the fields. Edit opens them again.
+function savedHtml(s, next) {
+  const { sets, records } = sessionSummary(program.plans.flatMap(sessionsOf), state.logs, s);
+  const bits = [count(sets, "set", "sets")];
+  if (records.length) bits.push(count(records.length, "PR", "PRs"));
+  const nextName = next ? (next.week === s.week ? next.day : `${next.week} · ${next.day}`) : "";
+  return `
+    <div class="card saved">
+      <div class="savedhead">
+        <span class="okdot">${TICK}</span>
+        <div class="savedtext"><h3>${esc(s.day)} saved</h3><p>${bits.join(" · ")}</p></div>
+        <button type="button" class="ghostbtn" data-act="reopen">Edit</button>
+      </div>
+      ${records.length ? `<ul class="prs">${records.map((r) => `<li>${MEDAL}<span class="prname">${esc(r.name)}</span><span class="prval">${numHtml(r.best, r.unit)}</span></li>`).join("")}</ul>` : ""}
+    </div>
+    ${nextName ? `<p class="next">Up next: ${esc(nextName)}</p>` : ""}
+    <button type="button" class="quiet" data-act="delete">Delete workout</button>`;
+}
+
+const hitsOf = (it, vals) => it.sets.filter((t, j) => hit(t, vals[j] ?? null)).length;
+const countHtml = (hits, total) => hits === total
+  ? `<span class="count full" aria-label="All ${total} sets hit">${TICK}</span>`
+  : `<span class="count" aria-label="${hits} of ${total} sets hit">${hits}/${total}</span>`;
+
+// One card per exercise. A set is a disc with the goal inside until he types; a hit disc fills in.
+function itemHtml(it, log) {
+  if (!it.sets.length) {
+    return `
+      <div class="card item reminder">
+        <h3>${esc(it.name)}</h3>
+        ${it.note ? `<p class="inote">${esc(it.note)}</p>` : ""}
+      </div>`;
+  }
+  const vals = log?.vals?.[it.key] ?? [];
+  const discs = it.sets.map((t, j) => {
+    const v = vals[j] ?? null;
+    const goal = t.min == null ? "max" : fmtTarget(t, it.unit).replace(" s", "s");
+    return `
+      <span class="set${hit(t, v) ? " hit" : ""}">
+        <input class="f" data-item="${esc(it.key)}" data-set="${j}" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off"
+          placeholder="${esc(goal)}" aria-label="${esc(`${it.name}, set ${j + 1}, goal ${fmtTarget(t, it.unit)}`)}" value="${v ?? ""}">
+      </span>`;
+  }).join("");
+  return `
+    <div class="card item" data-key="${esc(it.key)}">
+      <div class="itemhead"><h3>${esc(it.name)}</h3>${countHtml(hitsOf(it, vals), it.sets.length)}</div>
+      ${it.note ? `<p class="inote">${esc(it.note)}</p>` : ""}
+      <div class="sets">${discs}</div>
+    </div>`;
+}
+
+/* ---------- Plan: this week's workouts ---------- */
+
+function weekHtml() {
+  const list = sessions();
+  const c = current();
+  const week = list[c].week;
+  const days = list.map((s, j) => ({ s, j })).filter((x) => x.s.week === week);
+  const doneN = days.filter((x) => state.logs[x.s.key]?.done).length;
+  const rows = days.map(({ s, j }) => {
+    const log = state.logs[s.key];
+    const n = s.items.filter((it) => it.sets.length).length;
+    let st = "later";
+    let sub = count(n, "exercise", "exercises");
+    if (log?.done) { st = "done"; sub = `Done ${fmtDate(log.date)}`; }
+    else if (j === c) { st = "next"; sub = log ? (log.date === today ? "Today" : "In progress") : "Up next"; }
+    else if (hasValues(log)) { st = "next"; sub = `Not saved · ${fmtDate(log.date)}`; }
+    else if (j < c) { st = "missed"; sub = "Skipped"; }
+    return `
+      <li><button type="button" class="row" data-act="open" data-i="${j}">
+        <span class="st ${st}">${st === "done" ? TICK : ""}</span>
+        <span class="rtext"><b>${esc(s.day)}</b><small>${esc(sub)}</small></span>
+        ${RIGHT}
+      </button></li>`;
+  }).join("");
+  return `
+    <section class="plan">
+      <header class="head">
+        <p class="eyebrow">This week</p>
+        <h2 class="title">${esc(week)}</h2>
+      </header>
+      <div class="meter" role="img" aria-label="${doneN} of ${days.length} done"><i style="width:${(100 * doneN / days.length).toFixed(1)}%"></i></div>
+      <p class="caption">${doneN} of ${days.length} done</p>
+      <ul class="card rows">${rows}</ul>
+    </section>`;
+}
+
+/* ---------- You: the ladder, this week, the exercises ---------- */
+
+// A progress ring: grey track, the share done in the brand colour, clockwise from the top.
+function ring(share) {
+  const r = 27;
+  const C = 2 * Math.PI * r;
+  const len = share <= 0 ? 0 : Math.max(0.04, Math.min(1, share)) * C;
+  return `<svg class="ring" viewBox="0 0 64 64" aria-hidden="true"><circle class="track" cx="32" cy="32" r="${r}"/>${len ? `<circle class="arc" cx="32" cy="32" r="${r}" stroke-dasharray="${len.toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 32 32)"/>` : ""}</svg>`;
+}
 
 function ladderHtml() {
   const { steps, current: at, finished } = ladderState(program.ladder, state.logs, state.tests);
   if (!steps.length) return "";
-  const gauges = steps.map((s, i) => {
+  const tiles = steps.map((s, i) => {
     const cls = s.done ? "done" : i === at ? "now" : "later";
     const unit = s.unit === "sec" ? " s" : "";
     return `
-      <button type="button" class="gauge ${cls}${testing === s.key ? " open" : ""}" data-act="test" data-step="${esc(s.key)}" aria-expanded="${testing === s.key}"
+      <button type="button" class="step ${cls}${testing === s.key ? " open" : ""}" data-act="test" data-step="${esc(s.key)}" aria-expanded="${testing === s.key}"
         aria-label="${esc(s.name)}: PR ${s.best ?? "none yet"} of ${s.target}${unit}. Tap to log a test.">
-        <span class="dial">${ticks(s.share, 100, 48, 9)}
-          <span class="val">${s.best == null ? `<b class="none">0</b>` : `<b>${s.best}</b>`}<small>/${s.target}${unit}</small></span>
-        </span>
-        <span class="gname">${esc(s.name)}${RIGHT}</span>
+        <span class="dial">${ring(s.share)}<span class="sval"><b class="num">${s.best ?? 0}</b><small>/${s.target}${s.unit === "sec" ? "s" : ""}</small></span></span>
+        <span class="sname">${esc(s.name)}</span>
       </button>`;
   }).join("");
   const open = testing && steps.find((s) => s.key === testing);
-  return `<div class="gauges">${gauges}</div>${open ? testHtml(open) : trendHtml(finished ? steps[steps.length - 1] : steps[at], finished)}`;
+  return `<div class="steps">${tiles}</div>${open ? testHtml(open) : trendHtml(finished ? steps[steps.length - 1] : steps[at], finished)}`;
 }
 
 function trendHtml(step, finished) {
   const hist = stepHistory(step, state.logs, state.tests);
   const sec = step.unit === "sec" ? " s" : "";
   let big;
-  let label = esc(step.name);
-  if (finished) big = `<b>${step.best}</b><span>${sec ? "s, " : ""}goal reached</span>`;
-  else if (step.best == null) big = `<b class="none">0</b><span>Tap a dial to test</span>`;
-  else {
-    big = `<b>${step.target - step.best}</b><span>${sec ? "s " : ""}to go</span>`;
-    label += ` · PR ${step.best}${sec}`;
-  }
+  if (finished) big = `<b class="num">${step.best}</b><span>${sec ? "s · " : ""}goal reached</span>`;
+  else if (step.best == null) big = `<b class="num none">0</b><span>Tap a ring to test</span>`;
+  else big = `<b class="num">${step.target - step.best}</b><span>${sec ? "s " : ""}to go</span>`;
   return `
-    <div class="trend">
-      <div class="tnum"><p class="tlabel">${label}</p><p class="tbig">${big}</p></div>
+    <div class="card trend">
+      <div class="tnum">
+        <p class="tname">${esc(step.name)}${step.best != null && !finished ? ` · PR ${step.best}${sec}` : ""}</p>
+        <p class="tbig">${big}</p>
+      </div>
       <div class="tchart">${chartSvg(hist, step.target, !finished)}</div>
     </div>`;
 }
@@ -212,7 +320,7 @@ function chartSvg(hist, target, ahead) {
     if (climb) {
       body += `<path class="climb" d="M${end[0]} ${end[1]}${curve(end, [r, ty])}"/><circle class="flag" cx="${r}" cy="${ty}" r="4.5"/>`;
     }
-    body += `<circle class="dot" cx="${end[0]}" cy="${end[1]}" r="5.5"/>`;
+    body += `<circle class="dot" cx="${end[0]}" cy="${end[1]}" r="5"/>`;
     // First and latest day, each under its own point.
     const at = (pt, h, anchor) => `<text class="day" x="${pt[0]}" y="84" text-anchor="${anchor}">${fmtDate(h.date)}</text>`;
     if (n > 1) body += at(pts[0], hist[0], "start");
@@ -229,235 +337,56 @@ function chartSvg(hist, target, ahead) {
 function testHtml(step) {
   const todays = state.tests[step.key]?.[today];
   return `
-    <form class="test" data-step="${esc(step.key)}" autocomplete="off">
+    <form class="card test" data-step="${esc(step.key)}" autocomplete="off">
       <label for="testval">${esc(step.name)} · test today</label>
-      <input class="f" id="testval" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" value="${todays ?? ""}" aria-label="${esc(step.name)}, test today, ${step.unit === "sec" ? "seconds" : "reps"}">
-      <span class="unit">${step.unit === "sec" ? "s" : "reps"}</span>
-      <button type="submit" class="btn">Save</button>
-      <button type="button" class="x" data-act="closetest" aria-label="Close">×</button>
+      <div class="testrow">
+        <input class="f" id="testval" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" value="${todays ?? ""}" aria-label="${esc(step.name)}, test today, ${step.unit === "sec" ? "seconds" : "reps"}">
+        <span class="unit">${step.unit === "sec" ? "s" : "reps"}</span>
+        <button type="submit" class="btn">Save</button>
+        <button type="button" class="x" data-act="closetest" aria-label="Close">×</button>
+      </div>
     </form>`;
 }
 
-/* ---------- picking the plan ---------- */
-
-function pickerHtml(picked) {
-  return `
-    <section class="picker" role="group" aria-label="Plan">
-      <p class="pickhead">${picked ? "Switch plan" : "Pick your plan"}</p>
-      ${program.plans.map((p) => `
-        <button type="button" class="pick" data-act="plan" data-plan="${esc(p.id)}" aria-pressed="${p.id === state.plan}">
-          <span class="letter">${esc(p.id)}</span>${p.title ? `<span class="ptitle">${esc(p.title)}</span>` : ""}
-        </button>`).join("")}
-      ${picked ? `<button type="button" class="link" data-act="picker">Stay on Plan ${esc(picked.id)}</button>` : ""}
-    </section>`;
+function statHtml(value, one, many, diff) {
+  const delta = diff > 0 ? `<small class="delta up" aria-label="${diff} more than last week">+${diff}</small>`
+    : diff < 0 ? `<small class="delta" aria-label="${-diff} fewer than last week">−${-diff}</small>` : "";
+  return `<div class="stat"><b class="num">${value}</b><span>${value === 1 ? one : many}${delta}</span></div>`;
 }
 
-/* ---------- today's session ---------- */
-
-function kicker(i) {
-  const list = sessions();
-  const s = list[i];
-  const log = state.logs[s.key];
-  const c = current();
-  if (i === list.length - 1 && planDone(list, state.logs, today)) return "Plan done";
-  if (log?.done) return log.date === today ? "Today · saved" : `Done ${fmtDate(log.date)}`;
-  if (log) {
-    if (log.date === today) return sessionComplete(s, log) ? "Today · complete" : "Today";
-    if (hasValues(log)) return `Not saved · ${fmtDate(log.date)}`;
-  }
-  if (i === c) return "Up next";
-  return i < c ? "Not logged" : "Coming up";
-}
-
-// The whole plan as a row of dots, a gap between weeks, each day of the week in its own
-// colour: bright = all sets in, faint = some, hollow = skipped, dark = ahead. The ringed one is on screen.
-function dotsHtml(shown) {
-  const list = sessions();
-  const c = current();
-  let nth = 0;
-  return list.map((s, j) => {
-    const log = state.logs[s.key];
-    const st = hasValues(log) ? (sessionComplete(s, log) ? "full" : "part") : j < c ? "missed" : "ahead";
-    const newWeek = j > 0 && s.week !== list[j - 1].week;
-    nth = newWeek ? 0 : j > 0 ? nth + 1 : 0;
-    return `<button type="button" class="dot ${st} hue${nth % HUES}${newWeek ? " wk" : ""}${j === shown ? " here" : ""}" data-act="go" data-i="${j}" aria-label="${esc(s.week)} · ${esc(s.day)}"${j === shown ? ' aria-current="true"' : ""}></button>`;
-  }).join("");
-}
-
-function sessionHtml() {
-  const list = sessions();
-  const i = shownIndex();
-  const s = list[i];
-  const log = state.logs[s.key];
-  const c = current();
-  const away = i !== c;
-  const backTo = state.logs[list[c].key]?.date === today ? "Back to today" : "Back to the next workout";
-  const done = i === list.length - 1 && planDone(list, state.logs, today);
-  return `
-    <div class="sesshead">
-      <div class="sesstitle">
-        <p class="kicker" id="kicker">${esc(kicker(i))}</p>
-        <h2>${esc(s.week)} · ${esc(s.day)}</h2>
-      </div>
-      <div class="nav">
-        <button type="button" data-act="prev" aria-label="Previous workout"${i === 0 ? " disabled" : ""}>${LEFT}</button>
-        <button type="button" data-act="next" aria-label="Next workout"${i === list.length - 1 ? " disabled" : ""}>${RIGHT}</button>
-      </div>
-    </div>
-    <div class="dots" id="dots" role="group" aria-label="Workouts">${dotsHtml(i)}</div>
-    ${away ? `<button type="button" class="link back" data-act="home">${backTo}</button>` : ""}
-    ${done ? `<p class="banner">That was the whole plan. Time for a new test under Progress.</p>` : ""}
-    ${!log ? ghostHtml(s) : log.done ? savedHtml(s, list[i + 1]) : `
-      <div class="exbar">
-        <button type="button" class="pill" data-act="stop" data-confirm="${log.saved ? "Tap again to undo edits" : "Tap again to discard"}">${log.saved ? "Stop editing" : "Stop workout"}</button>
-      </div>
-      <div class="items">${s.items.map((it, n) => itemHtml(it, log, n)).join("")}</div>
-      <label class="notes">
-        <span>Notes</span>
-        <textarea id="note" rows="2" placeholder="How did it feel? Does anything hurt?">${esc(log.note ?? "")}</textarea>
-      </label>
-      <button type="button" class="start" data-act="finish"><span>Save workout</span><span class="knob">${TICK}</span></button>
-      <p class="formerr" id="finisherr" role="alert"></p>`}`;
-}
-
-// Not started yet: what's coming, and a button to start. Same as Yapp.
-function ghostHtml(s) {
-  return `
-    <button type="button" class="start" data-act="start"><span>Start workout</span><span class="knob">${RIGHT}</span></button>
-    <ul class="exlist">${s.items.map((it, n) => `<li class="hue${n % HUES}"><span><i aria-hidden="true"></i>${esc(it.name)}</span>${it.sets.length ? `<small>${esc(fmtPrescription(it))}</small>` : ""}</li>`).join("")}</ul>`;
-}
-
-// Saved: a summary card instead of the fields. Edit opens them again.
-function savedHtml(s, next) {
-  const { sets, records } = sessionSummary(program.plans.flatMap(sessionsOf), state.logs, s);
-  const bits = [count(sets, "set", "sets")];
-  if (records.length) bits.push(count(records.length, "new PR", "new PRs"));
-  return `
-    <section class="saved">
-      <div class="savedhead">
-        <span class="knob small">${TICK}</span>
-        <div class="savedtext"><h3>${esc(s.day)} saved</h3><p>${bits.join(" · ")}</p></div>
-        <button type="button" class="pill" data-act="reopen">Edit</button>
-      </div>
-      ${records.map((r) => `<p class="savedpr"><span class="prtag">PR</span><span class="savedname">${esc(r.name)}</span><span class="prval">${numHtml(r.best, r.unit)}</span></p>`).join("")}
-      ${next ? `<p class="savednext">Up next: ${esc(next.week)} · ${esc(next.day)}</p>` : ""}
-    </section>
-    <button type="button" class="textbtn" data-act="delete">Delete workout</button>`;
-}
-
-const hitsOf = (it, vals) => it.sets.filter((t, j) => hit(t, vals[j] ?? null)).length;
-const miniHtml = (hits, total) =>
-  `<span class="mini" aria-label="${hits} of ${total} sets hit">${ticks(hits / total, 44, 24, 5)}<span>${hits}/${total}</span></span>`;
-
-// Each exercise is a card that glows brighter in its own colour as sets get hit. A set is
-// a disc: the goal shows inside until he types, and a hit disc turns white.
-function itemHtml(it, log, n) {
-  if (!it.sets.length) {
-    return `
-      <div class="item reminder">
-        <h3>${esc(it.name)}</h3>
-        ${it.note ? `<p class="inote">${esc(it.note)}</p>` : ""}
-      </div>`;
-  }
-  const vals = log?.vals?.[it.key] ?? [];
-  const hits = hitsOf(it, vals);
-  const discs = it.sets.map((t, j) => {
-    const v = vals[j] ?? null;
-    const goal = t.min == null ? "max" : fmtTarget(t, it.unit).replace(" s", "s");
-    return `
-      <span class="set${hit(t, v) ? " hit" : ""}">
-        <input class="f" data-item="${esc(it.key)}" data-set="${j}" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off"
-          placeholder="${esc(goal)}" aria-label="${esc(`${it.name}, set ${j + 1}, goal ${fmtTarget(t, it.unit)}`)}" value="${v ?? ""}">
-      </span>`;
-  }).join("");
-  return `
-    <div class="item hue${n % HUES}" data-key="${esc(it.key)}" style="--p:${(hits / it.sets.length).toFixed(3)}">
-      <div class="itemhead">
-        <div><h3>${esc(it.name)}</h3><p class="rx">${esc(fmtPrescription(it))}</p></div>
-        ${miniHtml(hits, it.sets.length)}
-      </div>
-      ${it.note ? `<p class="inote">${esc(it.note)}</p>` : ""}
-      <div class="sets">${discs}</div>
-    </div>`;
-}
-
-/* ---------- the Progress tab, like Yapp's: this week, sets per week, one card per exercise ---------- */
-
-const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
-
-function tileHtml(value, one, many, diff) {
-  const delta = diff > 0 ? `<b class="up">▲ ${diff}</b> vs. last week` : diff < 0 ? `<b>▼ ${-diff}</b> vs. last week` : "Same as last week";
-  return `
-    <div class="tile">
-      <p class="big">${value}</p>
-      <p class="lbl">${value === 1 ? one : many}</p>
-      <p class="delta">${delta}</p>
-    </div>`;
-}
-
-// Each week is a column of dots, two wide: the more sets, the more rows light up.
-const BAR_ROWS = 6;
-function barDots(sets, max) {
-  const lit = sets > 0 ? Math.max(1, Math.round((sets / max) * BAR_ROWS)) : 0;
-  let out = "";
-  for (let row = BAR_ROWS - 1; row >= 0; row--) out += `<i${row < lit ? ' class="lit"' : ""}></i><i${row < lit ? ' class="lit"' : ""}></i>`;
-  return out;
-}
-
+// Sets per week as plain bars, this week in the brand colour. Tapping one says what it is.
 function barsHtml(totals) {
   const max = Math.max(1, ...totals.map((t) => t.sets));
+  const says = totals.map((t) => capital(`${weeksAgoLabel(t.weeksAgo)} · ${count(t.sets, "set", "sets")}, ${count(t.sessions, "workout", "workouts")}`));
   return `
     <div class="pchart" data-chart>
-      <p class="clabel">Sets per week</p>
       <div class="bars" role="group" aria-label="Sets per week, last ${WEEKS} weeks">
-        ${totals.map((t, i) => {
-          const say = `${weeksAgoLabel(t.weeksAgo)} · ${count(t.sets, "set", "sets")}, ${count(t.sessions, "workout", "workouts")}`;
-          return `<button type="button" class="bar${t.weeksAgo === 0 ? " on" : ""}" data-read="${esc(say)}" data-i="${i}" data-dot="${i}" aria-label="${esc(say)}">${barDots(t.sets, max)}</button>`;
-        }).join("")}
+        ${totals.map((t, i) => `<button type="button" class="bar${t.weeksAgo === 0 ? " on" : ""}" data-read="${esc(says[i])}" data-i="${i}" data-dot="${i}" aria-label="${esc(says[i])}"><i style="height:${t.sets ? Math.max(6, Math.round((100 * t.sets) / max)) : 0}%"></i></button>`).join("")}
       </div>
-      <p class="axis"><span class="read">${weeksAgoLabel(WEEKS - 1)}</span><span>this week</span></p>
+      <p class="read">${esc(says[says.length - 1])}</p>
     </div>`;
 }
 
-function sparkHtml(st) {
-  const W = 300, H = 56, PAD = 10;
+function sparkSvg(st) {
+  const W = 88, H = 32, PAD = 4;
   const pts = sparkPoints(st.weekly, W, H, PAD);
-  if (!pts.length) return `<p class="none">Not done in the last ${WEEKS} weeks.</p>`;
-  const step = (W - 2 * PAD) / (WEEKS - 1);
-  const lastI = pts[pts.length - 1].i;
-  const says = st.weekly.map((v, i) => `${weeksAgoLabel(WEEKS - 1 - i)} · ${v == null ? "not done" : fmtVal(v, st.unit)}`);
+  if (!pts.length) return "";
+  const says = st.weekly.map((v, i) => `${weeksAgoLabel(WEEKS - 1 - i)} ${v == null ? "not done" : fmtVal(v, st.unit)}`);
+  const last = pts[pts.length - 1];
   return `
-    <div class="pchart spark" data-chart>
-      <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(`${st.name}, best set per week: ${says.join(", ")}`)}">
-        ${pts.length > 1 ? `<polyline points="${pts.map((p) => `${p.x},${p.y}`).join(" ")}"/>` : ""}
-        ${pts.map((p) => `<circle cx="${p.x}" cy="${p.y}" r="5" data-dot="${p.i}"${p.i === lastI ? ' class="on"' : ""}/>`).join("")}
-        ${says.map((say, i) => `<rect x="${PAD + i * step - step / 2}" y="0" width="${step}" height="${H}" fill="transparent" data-read="${esc(say)}" data-i="${i}"/>`).join("")}
-      </svg>
-      <p class="axis"><span class="read">${weeksAgoLabel(WEEKS - 1)}</span><span>this week</span></p>
-    </div>`;
+    <svg class="spark" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(`Best set per week: ${says.join(", ")}`)}">
+      ${pts.length > 1 ? `<polyline points="${pts.map((p) => `${p.x},${p.y}`).join(" ")}"/>` : ""}
+      <circle cx="${last.x}" cy="${last.y}" r="3.2"/>
+    </svg>`;
 }
 
-function statCardHtml(st) {
-  const v = (n) => numHtml(n, st.unit);
-  const arrow = { up: "▲", down: "▼", same: "=" }[st.trend] ?? "";
-  const word = { up: "better", down: "worse", same: "same" }[st.trend] ?? "";
-  const cell = (c) => `<div class="cell"><span class="lbl">${weeksAgoLabel(c.weeksAgo)}</span><span class="cval">${v(c.best)}</span></div>`;
-  return `
-    <section class="pcard">
-      <div class="phead">
-        <h3>${esc(st.name)}</h3>
-        <p class="pr"><span class="prtag">PR</span><span class="prval">${v(st.pr.best)}</span></p>
-      </div>
-      <p class="prdate">${fmtDate(st.pr.date)}</p>
-      <div class="cmp${st.previous ? "" : " one"}">
-        ${cell(st.latest)}
-        ${st.previous ? `<span class="arrow ${st.trend}" role="img" aria-label="${word}">${arrow}</span>${cell(st.previous)}` : ""}
-      </div>
-      ${sparkHtml(st)}
-    </section>`;
-}
+const exRowHtml = (st) => `
+  <li class="exrow">
+    <div class="extext"><b>${esc(st.name)}</b><span class="pr">${MEDAL}${numHtml(st.pr.best, st.unit)}</span></div>
+    ${sparkSvg(st)}
+  </li>`;
 
-function progressHtml() {
+function youHtml() {
   const first = Object.values(state.logs).map((l) => l.date).filter(Boolean).sort()[0];
   WEEKS = Math.min(MAX_WEEKS, Math.max(MIN_WEEKS, first ? weeksAgo(first, today) + 1 : 0));
   const totals = weeklyTotals(state.logs, today, WEEKS);
@@ -465,25 +394,49 @@ function progressHtml() {
   const before = totals[WEEKS - 2];
   const stats = exerciseStats(program.plans.flatMap(sessionsOf), state.logs, today, WEEKS);
   return `
-    <section class="progress">
-      <p class="sect">This week</p>
-      <div class="tiles">
-        ${tileHtml(now.sessions, "Workout", "Workouts", now.sessions - before.sessions)}
-        ${tileHtml(now.sets, "Set", "Sets", now.sets - before.sets)}
+    <section class="you">
+      <div id="ladder">${ladderHtml()}</div>
+      <h2 class="sect">This week</h2>
+      <div class="card week">
+        <div class="stats">
+          ${statHtml(now.sessions, "Workout", "Workouts", now.sessions - before.sessions)}
+          ${statHtml(now.sets, "Set", "Sets", now.sets - before.sets)}
+        </div>
+        ${barsHtml(totals)}
       </div>
-      ${barsHtml(totals)}
-      <p class="sect">Exercises</p>
-      ${stats.length ? `<div class="pcards">${stats.map(statCardHtml).join("")}</div>`
-        : `<p class="empty">Nothing logged yet. Your PRs show up here after your first workout.</p>`}
+      <h2 class="sect">Exercises</h2>
+      ${stats.length ? `<ul class="card rows ex">${stats.map(exRowHtml).join("")}</ul>`
+        : `<p class="empty">Your PRs show up here after your first workout.</p>`}
     </section>`;
 }
 
-// Tapping a bar or a week on a line says what it is, under the chart.
+// Tapping a bar says what it is, under the chart.
 function showRead(el) {
   const chart = el.closest("[data-chart]");
   if (!chart) return;
   chart.querySelector(".read").textContent = el.dataset.read;
   for (const d of chart.querySelectorAll("[data-dot]")) d.classList.toggle("on", d.dataset.dot === el.dataset.i);
+}
+
+const redrawLadder = () => {
+  const el = document.getElementById("ladder");
+  if (el) el.innerHTML = ladderHtml();
+};
+
+/* ---------- picking the plan ---------- */
+
+function pickerHtml(picked) {
+  return `
+    <section class="picker" role="group" aria-label="Plan">
+      <h2 class="title">${picked ? "Switch plan" : "Pick your plan"}</h2>
+      <ul class="card rows">${program.plans.map((p) => `
+        <li><button type="button" class="row" data-act="plan" data-plan="${esc(p.id)}" aria-pressed="${p.id === state.plan}">
+          <span class="st ${p.id === state.plan ? "done" : "later"}">${p.id === state.plan ? TICK : ""}</span>
+          <span class="rtext"><b>Plan ${esc(p.id)}</b>${p.title ? `<small>${esc(p.title)}</small>` : ""}</span>
+        </button></li>`).join("")}
+      </ul>
+      ${picked ? `<button type="button" class="quiet" data-act="picker">Stay on Plan ${esc(picked.id)}</button>` : ""}
+    </section>`;
 }
 
 /* ---------- typing ---------- */
@@ -494,7 +447,6 @@ root.addEventListener("input", (e) => {
     const s = sessions()[shownIndex()];
     if (!state.logs[s.key]) return;
     setNote(state, s, el.value, today);
-    refreshAfterLog();
     saveSoon();
     return;
   }
@@ -506,23 +458,11 @@ root.addEventListener("input", (e) => {
   const v = parseNum(el.value);
   setValue(state, s, item.key, j, v, today);
   el.closest(".set").classList.toggle("hit", hit(item.sets[j], v));
-  const card = el.closest(".item");
+  // Only the counter is redrawn, so the keyboard stays where it is.
   const hits = hitsOf(item, state.logs[s.key]?.vals?.[item.key] ?? []);
-  card.style.setProperty("--p", (hits / item.sets.length).toFixed(3));
-  card.querySelector(".mini").outerHTML = miniHtml(hits, item.sets.length);
-  refreshAfterLog();
+  el.closest(".item").querySelector(".count").outerHTML = countHtml(hits, item.sets.length);
   saveSoon();
 });
-
-// The first number turns "Up next" into "Today" and fills the session's dot.
-// Only those bits are redrawn, so the keyboard stays where it is.
-function refreshAfterLog() {
-  const i = shownIndex();
-  const k = document.getElementById("kicker");
-  if (k) k.textContent = kicker(i);
-  const d = document.getElementById("dots");
-  if (d) d.innerHTML = dotsHtml(i);
-}
 
 // Tapping a number selects it, so typing replaces it. Safari puts the caret down on
 // mouseup, so that first mouseup is cancelled too. Same as Yapp.
@@ -553,7 +493,7 @@ root.addEventListener("submit", (e) => {
   setTest(state, form.dataset.step, v, today);
   testing = null;
   persist();
-  ladderEl.innerHTML = ladderHtml();
+  redrawLadder();
 });
 
 /* ---------- buttons ---------- */
@@ -574,16 +514,7 @@ function armed(btn, label) {
   return false;
 }
 
-// After start or delete the session on screen may have become (or stopped being) today's.
-function keepShowing(i) {
-  viewing = i === current() ? null : i;
-}
-
-function show(index) {
-  flush();
-  viewing = index === current() ? null : index;
-  render();
-}
+const toTop = () => document.body.scrollTo(0, 0);
 
 root.addEventListener("click", (e) => {
   const read = e.target.closest("[data-read]");
@@ -593,13 +524,13 @@ root.addEventListener("click", (e) => {
   const act = btn.dataset.act;
   if (act === "test") {
     testing = testing === btn.dataset.step ? null : btn.dataset.step;
-    ladderEl.innerHTML = ladderHtml();
+    redrawLadder();
     if (testing) document.getElementById("testval")?.focus();
     return;
   }
   if (act === "closetest") {
     testing = null;
-    ladderEl.innerHTML = ladderHtml();
+    redrawLadder();
     return;
   }
   if (act === "picker") {
@@ -612,30 +543,29 @@ root.addEventListener("click", (e) => {
     state.plan = btn.dataset.plan;
     pickerOpen = false;
     viewing = null;
-    page = "training";
+    page = "today";
     persist();
     render();
     return;
   }
-  if (act === "prev" || act === "next") {
-    show(shownIndex() + (act === "prev" ? -1 : 1));
+  if (act === "open") {
+    flush();
+    viewing = Number(btn.dataset.i);
+    render();
+    toTop();
     return;
   }
-  if (act === "go") {
-    show(Number(btn.dataset.i));
-    return;
-  }
-  if (act === "home") {
+  if (act === "back") {
+    flush();
     viewing = null;
     render();
+    toTop();
     return;
   }
-  const i = shownIndex();
-  const s = sessions()[i];
+  const s = sessions()[shownIndex()];
   if (act === "start") {
     startSession(state, s, today);
     persist();
-    keepShowing(i);
     render();
     // Ask the browser not to clear this site's storage when space runs low.
     navigator.storage?.persist?.().catch(() => {});
@@ -655,7 +585,7 @@ root.addEventListener("click", (e) => {
       return;
     }
     render();
-    document.body.scrollTo(0, 0);
+    toTop();
   } else if (act === "reopen") {
     reopenSession(state, s);
     persist();
@@ -665,27 +595,28 @@ root.addEventListener("click", (e) => {
     flush();
     stopSession(state, s);
     persist();
-    keepShowing(i);
     render();
-    document.body.scrollTo(0, 0);
+    toTop();
   } else if (act === "delete") {
     if (!armed(btn, "Tap again to delete")) return;
     deleteSession(state, s);
     persist();
-    keepShowing(i);
     render();
-    document.body.scrollTo(0, 0);
+    toTop();
   }
 });
 
+// Tapping the tab you're on goes back to its start, like most apps.
 pagesEl.addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-page]");
-  if (!btn || btn.dataset.page === page) return;
+  if (!btn) return;
+  if (btn.dataset.page === page && viewing == null) { toTop(); return; }
   flush();
   page = btn.dataset.page;
+  viewing = null;
   testing = null;
   render();
-  document.body.scrollTo(0, 0);
+  toTop();
 });
 
 /* ---------- staying right when the app comes back ---------- */
