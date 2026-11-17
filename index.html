@@ -6,18 +6,29 @@
   <title>Pathletics</title>
   <meta name="description" content="Today's workout from your coach's plan. Log what you did and see how far you've come.">
   <meta name="robots" content="noindex">
-  <meta name="theme-color" content="#F4F4F6" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#0E0E10" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#F2F2F7">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Pathletics">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <script>
+    // Light or dark before anything is drawn: the setting under You, else the phone's.
+    // app.js keeps it up to date after this. Keep in step with applyTheme() there.
+    (function () {
+      var t = "system";
+      try { t = JSON.parse(localStorage.getItem("coach.prefs") || "{}").theme || "system"; } catch (e) {}
+      if (t !== "light" && t !== "dark") t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      document.documentElement.dataset.theme = t;
+      document.querySelector('meta[name="theme-color"]').content = t === "dark" ? "#000000" : "#F2F2F7";
+    })();
+  </script>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-180.png" type="image/png">
   <link rel="apple-touch-icon" href="icon-180.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap">
+  <!-- Outfit for the wordmark only. Nunito stands in for Apple's rounded numbers on phones that don't have them. -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800&family=Outfit:wght@700&display=swap">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -37,6 +48,10 @@
     <button type="button" data-page="plan">
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8.5 3v4M15.5 3v4"/></svg>
       <span>Plan</span>
+    </button>
+    <button type="button" data-page="progress">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 20v-6M12 20V9M18.5 20V4"/></svg>
+      <span>Progress</span>
     </button>
     <button type="button" data-page="you">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="4"/><path d="M4.5 20.5c1.4-3.6 4.2-5.5 7.5-5.5s6.1 1.9 7.5 5.5"/></svg>

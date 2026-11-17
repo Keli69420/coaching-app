@@ -6,6 +6,7 @@ import {
   hit, fmtPrescription, ladderState, stepHistory, parseNum, emptyState, cleanState, setValue, setNote, setTest, keyOf, hasValues,
   weekStart, weeksAgo, weeksAgoLabel, weeklyTotals, exerciseStats, sparkPoints, fmtVal, fmtDate,
   startSession, finishSession, reopenSession, stopSession, deleteSession, tidyLogs, sessionSummary,
+  allTimeTotals, cleanPrefs,
 } from "../logic.js";
 
 const DEMO = readFileSync(new URL("./fixtures/demo.md", import.meta.url), "utf8");
@@ -351,4 +352,26 @@ test("spark points: highest at the top, empty weeks skipped", () => {
   const pts = sparkPoints([4, null, 8], 100, 50, 10);
   assert.deepEqual(pts, [{ i: 0, x: 10, y: 40 }, { i: 2, x: 90, y: 10 }]);
   assert.deepEqual(sparkPoints([5, 5], 100, 50, 10).map((p) => p.y), [25, 25]);
+});
+
+test("lifetime totals: workouts and sets with a number in them, PRs as on the saved cards", () => {
+  const ss = sessionsOf(TWO_DAYS.plans[0]);
+  const st = emptyState();
+  assert.deepEqual(allTimeTotals(ss, st.logs), { workouts: 0, sets: 0, prs: 0, since: null });
+  startSession(st, ss[0], "2026-11-10");
+  setValue(st, ss[0], "liegestütze", 0, 6, "2026-11-10");
+  setValue(st, ss[0], "halten", 0, 20, "2026-11-10");
+  startSession(st, ss[1], "2026-11-12");
+  setValue(st, ss[1], "liegestütze", 0, 8, "2026-11-12");
+  setValue(st, ss[1], "liegestütze", 1, 7, "2026-11-12");
+  assert.deepEqual(allTimeTotals(ss, st.logs), { workouts: 2, sets: 4, prs: 1, since: "2026-11-10" });
+  st.logs["gone|week 9|day"] = { date: "2026-11-01", vals: { x: [3, null] }, note: "" }; // a day no longer in the plan
+  assert.deepEqual(allTimeTotals(ss, st.logs), { workouts: 3, sets: 5, prs: 1, since: "2026-11-01" });
+});
+
+test("settings: system theme and no name unless set", () => {
+  assert.deepEqual(cleanPrefs(null), { theme: "system", name: "" });
+  assert.deepEqual(cleanPrefs({ theme: "dark", name: "  Test Name " }), { theme: "dark", name: "Test Name" });
+  assert.deepEqual(cleanPrefs({ theme: "purple", name: 7 }), { theme: "system", name: "" });
+  assert.equal(cleanPrefs({ name: "x".repeat(60) }).name.length, 40);
 });

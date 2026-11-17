@@ -563,3 +563,37 @@ export function sessionSummary(sessions, logs, session) {
   const records = [...now.entries()].filter(([k, r]) => before.has(k) && r.best > before.get(k)).map(([, r]) => r);
   return { sets, records };
 }
+
+/* ---------- the You tab: lifetime totals and settings ---------- */
+
+// Everything since the first workout: workouts with a number in them, sets typed, PRs set
+// (each time a workout beat every earlier day for an exercise, as on the saved card), and
+// the first workout's date. `sessions` is every plan's, so a renamed plan still counts.
+export function allTimeTotals(sessions, logs) {
+  let workouts = 0;
+  let sets = 0;
+  let since = null;
+  for (const log of Object.values(logs || {})) {
+    if (!log.date || !hasValues(log)) continue;
+    workouts += 1;
+    sets += Object.values(log.vals).reduce((n, arr) => n + filled(arr).length, 0);
+    if (!since || log.date < since) since = log.date;
+  }
+  let prs = 0;
+  for (const s of sessions) {
+    if (logs?.[s.key]?.date && hasValues(logs[s.key])) prs += sessionSummary(sessions, logs, s).records.length;
+  }
+  return { workouts, sets, prs, since };
+}
+
+// Settings live apart from the logs, under their own key, so the page can pick the
+// colours before it draws anything. The name stays on the phone like everything else.
+export const THEMES = ["system", "light", "dark"];
+
+export function cleanPrefs(raw) {
+  const p = raw && typeof raw === "object" ? raw : {};
+  return {
+    theme: THEMES.includes(p.theme) ? p.theme : "system",
+    name: typeof p.name === "string" ? p.name.trim().slice(0, 40) : "",
+  };
+}

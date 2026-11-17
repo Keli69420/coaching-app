@@ -3,15 +3,18 @@ import {
   ladderState, stepHistory, parseNum, todayIso, fmtDate, cleanState, emptyState, setValue, setNote, setTest, hasValues,
   weeklyTotals, exerciseStats, sparkPoints, weeksAgo, weeksAgoLabel, fmtVal,
   startSession, finishSession, reopenSession, stopSession, deleteSession, tidyLogs, sessionSummary,
+  allTimeTotals, cleanPrefs,
 } from "./logic.js";
 
 // The coach's plan. One file holds the ladder and every starting level (Plan A, B, C...).
 const PLAN_URL = "plans/muscle-up.md";
 // Everything the client logs, on this phone only. Never rename it: old logs would look lost.
 const KEY = "coach.v1";
+// Settings (light/dark, his name), apart from the logs. index.html reads the theme from it too.
+const PREFS_KEY = "coach.prefs";
 const SAVE_DELAY_MS = 300;
 const ARMED_MS = 3000; // how long a "tap again to…" button waits for the second tap
-// How far back the You tab looks: from his first logged week, at least 4 weeks, at most 8,
+// How far back the Progress tab looks: from his first logged week, at least 4 weeks, at most 8,
 // so a four-week plan doesn't open on a chart that is mostly empty.
 const MIN_WEEKS = 4;
 const MAX_WEEKS = 8;
@@ -24,12 +27,14 @@ const pagesEl = document.getElementById("pages");
 const statusEl = document.getElementById("status");
 
 let today = todayIso();
-// Three tabs (Keli, 17 Nov): "today" shows only today's workout, "plan" this week's
-// workouts, "you" the ladder and progress. Always opens on today.
+// Four tabs (Keli, 17 Nov): "today" shows only today's workout, "plan" this week's workouts,
+// "progress" the ladder and his numbers, "you" his profile and settings, like Strava's You.
+// Always opens on today.
 let page = "today";
 let program = null; // { ladder, plans, errors }
 let loadError = "";
 let state = tidyLogs(load(), today);
+let prefs = loadPrefs();
 let viewing = null; // on the Plan tab: the workout opened from the week, or null for the week itself
 let pickerOpen = false;
 let testing = null; // ladder step key while its test field is open
@@ -68,6 +73,32 @@ function saveSoon() {
 
 const flush = () => { if (pending) persist(); };
 
+function loadPrefs() {
+  try {
+    return cleanPrefs(JSON.parse(localStorage.getItem(PREFS_KEY) || "null"));
+  } catch {
+    return cleanPrefs(null);
+  }
+}
+
+function savePrefs() {
+  try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch { /* still works for this visit */ }
+}
+
+/* ---------- light or dark ---------- */
+
+// "system" follows the phone, and keeps following it while the app is open.
+// Same rule as the script at the top of index.html.
+const darkQuery = matchMedia("(prefers-color-scheme: dark)");
+function applyTheme() {
+  const t = prefs.theme === "light" || prefs.theme === "dark" ? prefs.theme : darkQuery.matches ? "dark" : "light";
+  document.documentElement.dataset.theme = t;
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = t === "dark" ? "#000000" : "#F2F2F7";
+}
+darkQuery.addEventListener?.("change", applyTheme);
+applyTheme();
+
 /* ---------- drawing helpers ---------- */
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -78,8 +109,14 @@ const TICK = `<svg class="tick" viewBox="0 0 16 12" width="14" height="11" aria-
 // Gold is for personal records only, like a medal.
 const MEDAL = `<svg class="medal" viewBox="0 0 16 18" width="14" height="16" aria-hidden="true"><path d="M4 1h3l1.6 4.5L10.2 1h1.8L9.8 7" fill="none" stroke="var(--gold-deep)" stroke-width="1.6" stroke-linejoin="round"/><circle cx="8" cy="12" r="5" fill="var(--gold)"/></svg>`;
 
-// A number with a smaller unit after it: "22 s", "6 reps".
-const numHtml = (n, unit) => `<b class="num">${esc(n)}</b><small class="unit">${unit === "sec" ? "s" : "reps"}</small>`;
+// A number with its unit after it, small capitals in the same colour, like Apple Fitness: "22 SEC", "6 REPS".
+const unitWord = (n, unit) => (unit === "sec" ? "sec" : n === 1 ? "rep" : "reps");
+const numHtml = (n, unit) => `<b class="num">${esc(n)}</b><small class="unit">${unitWord(n, unit)}</small>`;
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const longDate = (iso) => {
+  const [y, m, d] = iso.split("-").map(Number);
+  return `${WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]}, ${fmtDate(iso)}`;
+};
 const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 const capital = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -115,6 +152,7 @@ function render() {
   chipEl.innerHTML = !picked || program.plans.length === 1 ? ""
     : `<button type="button" class="chip${pickerOpen ? " on" : ""}" data-act="picker" aria-expanded="${pickerOpen}" aria-label="Plan ${esc(picked.id)}. Tap to switch.">Plan ${esc(picked.id)}</button>`;
   if (pickerOpen || !picked) main.innerHTML = pickerHtml(picked);
+  else if (page === "progress") main.innerHTML = progressHtml();
   else if (page === "you") main.innerHTML = youHtml();
   else if (page === "plan" && viewing == null) main.innerHTML = weekHtml();
   else main.innerHTML = sessionHtml(shownIndex());
@@ -137,7 +175,7 @@ function sessionHtml(i) {
         ${fromPlan ? "" : `<p class="eyebrow">${esc(s.week)}</p>`}
         <h2 class="title">${esc(s.day)}</h2>
       </header>
-      ${done ? `<p class="banner">That was the whole plan. Time for a new test under You.</p>` : ""}
+      ${done ? `<p class="banner">That was the whole plan. Time for a new test under Progress.</p>` : ""}
       ${!log ? ghostHtml(s) : log.done ? savedHtml(s, list[i + 1]) : activeHtml(s, log)}
     </section>`;
 }
@@ -180,9 +218,11 @@ function savedHtml(s, next) {
 }
 
 const hitsOf = (it, vals) => it.sets.filter((t, j) => hit(t, vals[j] ?? null)).length;
-const countHtml = (hits, total) => hits === total
-  ? `<span class="count full" aria-label="All ${total} sets hit">${TICK}</span>`
-  : `<span class="count" aria-label="${hits} of ${total} sets hit">${hits}/${total}</span>`;
+// A small ring per exercise that fills as sets get hit, with a tick once they all are.
+const countHtml = (hits, total) => `
+  <span class="count${hits === total ? " full" : ""}" role="img" aria-label="${hits === total ? `All ${total} sets hit` : `${hits} of ${total} sets hit`}">
+    ${ring(total ? hits / total : 0)}${hits === total ? TICK : `<b class="num">${hits}</b>`}
+  </span>`;
 
 // One card per exercise. A set is a disc with the goal inside until he types; a hit disc fills in.
 function itemHtml(it, log) {
@@ -218,38 +258,42 @@ function weekHtml() {
   const c = current();
   const week = list[c].week;
   const days = list.map((s, j) => ({ s, j })).filter((x) => x.s.week === week);
-  const doneN = days.filter((x) => state.logs[x.s.key]?.done).length;
+  let doneN = 0;
   const rows = days.map(({ s, j }) => {
     const log = state.logs[s.key];
     const n = s.items.filter((it) => it.sets.length).length;
     let st = "later";
     let sub = count(n, "exercise", "exercises");
-    if (log?.done) { st = "done"; sub = `Done ${fmtDate(log.date)}`; }
+    if (log?.done) { st = "done"; sub = `Done ${fmtDate(log.date)}`; doneN += 1; }
     else if (j === c) { st = "next"; sub = log ? (log.date === today ? "Today" : "In progress") : "Up next"; }
     else if (hasValues(log)) { st = "next"; sub = `Not saved · ${fmtDate(log.date)}`; }
     else if (j < c) { st = "missed"; sub = "Skipped"; }
-    return `
+    return { st, html: `
       <li><button type="button" class="row" data-act="open" data-i="${j}">
         <span class="st ${st}">${st === "done" ? TICK : ""}</span>
         <span class="rtext"><b>${esc(s.day)}</b><small>${esc(sub)}</small></span>
         ${RIGHT}
-      </button></li>`;
-  }).join("");
+      </button></li>` };
+  });
   return `
     <section class="plan">
       <header class="head">
         <p class="eyebrow">This week</p>
         <h2 class="title">${esc(week)}</h2>
       </header>
-      <div class="meter" role="img" aria-label="${doneN} of ${days.length} done"><i style="width:${(100 * doneN / days.length).toFixed(1)}%"></i></div>
-      <p class="caption">${doneN} of ${days.length} done</p>
-      <ul class="card rows">${rows}</ul>
+      <div class="card metric">
+        <h3 class="ctitle">Workouts</h3>
+        <p class="big lime"><b class="num">${doneN}/${days.length}</b><small class="unit">done</small></p>
+        <div class="segs" aria-hidden="true">${rows.map((r) => `<i class="${r.st}"></i>`).join("")}</div>
+      </div>
+      <ul class="card rows">${rows.map((r) => r.html).join("")}</ul>
     </section>`;
 }
 
-/* ---------- You: the ladder, this week, the exercises ---------- */
+/* ---------- Progress: the ladder, this week, records ---------- */
 
-// A progress ring: grey track, the share done in the brand colour, clockwise from the top.
+// A progress ring: a dim track in the ring's own colour, the share done on top, clockwise
+// from the top. The colour comes from the element around it (pink, lime, or grey).
 function ring(share) {
   const r = 27;
   const C = 2 * Math.PI * r;
@@ -257,6 +301,8 @@ function ring(share) {
   return `<svg class="ring" viewBox="0 0 64 64" aria-hidden="true"><circle class="track" cx="32" cy="32" r="${r}"/>${len ? `<circle class="arc" cx="32" cy="32" r="${r}" stroke-dasharray="${len.toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 32 32)"/>` : ""}</svg>`;
 }
 
+// Three separate rings, never nested: nested red/green/blue rings are Apple's Activity
+// rings, and Apple asks apps not to imitate them. Pink = the step he's on, lime = done.
 function ladderHtml() {
   const { steps, current: at, finished } = ladderState(program.ladder, state.logs, state.tests);
   if (!steps.length) return "";
@@ -266,35 +312,37 @@ function ladderHtml() {
     return `
       <button type="button" class="step ${cls}${testing === s.key ? " open" : ""}" data-act="test" data-step="${esc(s.key)}" aria-expanded="${testing === s.key}"
         aria-label="${esc(s.name)}: PR ${s.best ?? "none yet"} of ${s.target}${unit}. Tap to log a test.">
-        <span class="dial">${ring(s.share)}<span class="sval"><b class="num">${s.best ?? 0}</b><small>/${s.target}${s.unit === "sec" ? "s" : ""}</small></span></span>
+        <span class="dial">${ring(s.share)}<span class="sval">${s.done ? TICK : `<b class="num">${s.best ?? 0}</b><small>/${s.target}</small>`}</span></span>
         <span class="sname">${esc(s.name)}</span>
       </button>`;
   }).join("");
   const open = testing && steps.find((s) => s.key === testing);
-  return `<div class="steps">${tiles}</div>${open ? testHtml(open) : trendHtml(finished ? steps[steps.length - 1] : steps[at], finished)}`;
+  return `
+    <div class="card">
+      <h3 class="ctitle">Ladder</h3>
+      <div class="steps">${tiles}</div>
+    </div>
+    ${open ? testHtml(open) : trendHtml(finished ? steps[steps.length - 1] : steps[at], finished)}`;
 }
 
+// The step he's on, Apple Fitness style: "4/5 REPS" big in pink, how far to go, and the climb.
 function trendHtml(step, finished) {
   const hist = stepHistory(step, state.logs, state.tests);
-  const sec = step.unit === "sec" ? " s" : "";
-  let big;
-  if (finished) big = `<b class="num">${step.best}</b><span>${sec ? "s · " : ""}goal reached</span>`;
-  else if (step.best == null) big = `<b class="num">${step.target}</b><span>${sec ? "s " : ""}to go</span>`;
-  else big = `<b class="num">${step.target - step.best}</b><span>${sec ? "s " : ""}to go</span>`;
+  const left = step.target - (step.best ?? 0);
+  const label = finished ? "Goal reached" : step.best == null ? "Not tested yet · tap its ring" : `${left} to go`;
   return `
     <div class="card trend">
-      <div class="tnum">
-        <p class="tname">${esc(step.name)}${step.best == null ? " · tap to test" : !finished ? ` · PR ${step.best}${sec}` : ""}</p>
-        <p class="tbig">${big}</p>
-      </div>
-      ${hist.length ? `<div class="tchart">${chartSvg(hist, step.target, !finished)}</div>` : ""}
+      <h3 class="ctitle">${esc(step.name)}</h3>
+      <p class="clabel">${esc(label)}</p>
+      <p class="big ${finished ? "lime" : "pink"}"><b class="num">${step.best ?? 0}/${step.target}</b><small class="unit">${unitWord(step.target, step.unit)}</small></p>
+      ${hist.length ? chartSvg(hist, step.target, !finished) : ""}
     </div>`;
 }
 
 // Best per day as a smooth line, the target as a dashed line. While the goal is still
 // ahead, a dashed path climbs from his latest best to a dot on the target: the gap, drawn.
 function chartSvg(hist, target, ahead) {
-  const W = 200, top = 14, bottom = 66, l = 4, r = 192;
+  const W = 300, top = 14, bottom = 66, l = 4, r = W - 8;
   // The axis starts a little under his lowest day, not at 0, so a rep gained shows as a climb.
   const bests = hist.map((h) => h.best);
   const max = Math.max(target, ...bests);
@@ -303,7 +351,7 @@ function chartSvg(hist, target, ahead) {
   const n = hist.length;
   const last = n ? hist[n - 1].best : null;
   const climb = ahead && last != null && last < target;
-  const histR = climb ? 136 : r; // leave room on the right for the path to the goal
+  const histR = climb ? W - 80 : r; // leave room on the right for the path to the goal
   const x = (i) => (n === 1 ? (climb ? l + 6 : r) : l + (i * (histR - l)) / (n - 1));
   const ty = +y(target).toFixed(1);
   let body = "";
@@ -338,32 +386,33 @@ function testHtml(step) {
   const todays = state.tests[step.key]?.[today];
   return `
     <form class="card test" data-step="${esc(step.key)}" autocomplete="off">
-      <label for="testval">${esc(step.name)} · test today</label>
+      <label class="ctitle" for="testval">${esc(step.name)} test</label>
       <div class="testrow">
         <input class="f" id="testval" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" value="${todays ?? ""}" aria-label="${esc(step.name)}, test today, ${step.unit === "sec" ? "seconds" : "reps"}">
-        <span class="unit">${step.unit === "sec" ? "s" : "reps"}</span>
+        <span class="unit">${step.unit === "sec" ? "sec" : "reps"}</span>
         <button type="submit" class="btn">Save</button>
         <button type="button" class="x" data-act="closetest" aria-label="Close">×</button>
       </div>
     </form>`;
 }
 
-function statHtml(value, one, many, diff) {
-  const delta = diff > 0 ? `<small class="delta up" aria-label="${diff} more than last week">+${diff}</small>`
-    : diff < 0 ? `<small class="delta" aria-label="${-diff} fewer than last week">−${-diff}</small>` : "";
-  return `<div class="stat"><b class="num">${value}</b><span>${value === 1 ? one : many}${delta}</span></div>`;
-}
-
-// Sets per week as plain bars, this week in the brand colour. Tapping one says what it is.
-function barsHtml(totals) {
-  const max = Math.max(1, ...totals.map((t) => t.sets));
-  const says = totals.map((t) => capital(`${weeksAgoLabel(t.weeksAgo)} · ${count(t.sets, "set", "sets")}, ${count(t.sessions, "workout", "workouts")}`));
+// One number per card, Apple Fitness style: title, "This week", the number big in the card's
+// colour, then a bar per week with this week bright.
+function metricHtml(title, hue, one, many, totals, pick) {
+  const vals = totals.map(pick);
+  const now = vals[vals.length - 1];
+  const diff = now - vals[vals.length - 2];
+  const max = Math.max(1, ...vals);
+  const delta = diff > 0 ? `<small class="delta">+${diff}</small>` : diff < 0 ? `<small class="delta">−${-diff}</small>` : "";
+  const says = totals.map((t, i) => `${weeksAgoLabel(t.weeksAgo)} ${count(vals[i], one, many)}`).join(", ");
   return `
-    <div class="pchart" data-chart>
-      <div class="bars" role="group" aria-label="Sets per week, last ${WEEKS} weeks">
-        ${totals.map((t, i) => `<button type="button" class="bar${t.weeksAgo === 0 ? " on" : ""}" data-read="${esc(says[i])}" data-i="${i}" data-dot="${i}" aria-label="${esc(says[i])}"><i style="height:${t.sets ? Math.max(6, Math.round((100 * t.sets) / max)) : 0}%"></i></button>`).join("")}
+    <div class="card metric ${hue}">
+      <h3 class="ctitle">${title}</h3>
+      <p class="clabel">This week</p>
+      <p class="big"><b class="num">${now}</b>${delta}</p>
+      <div class="minibars" role="img" aria-label="${esc(capital(`${title} per week: ${says}`))}">
+        ${vals.map((v, i) => `<i class="${i === vals.length - 1 ? "on" : ""}" style="height:${v ? Math.max(8, Math.round((100 * v) / max)) : 0}%"></i>`).join("")}
       </div>
-      <p class="read">${esc(says[says.length - 1])}</p>
     </div>`;
 }
 
@@ -386,42 +435,77 @@ const exRowHtml = (st) => `
     ${sparkSvg(st)}
   </li>`;
 
-function youHtml() {
+function progressHtml() {
   const first = Object.values(state.logs).map((l) => l.date).filter(Boolean).sort()[0];
   WEEKS = Math.min(MAX_WEEKS, Math.max(MIN_WEEKS, first ? weeksAgo(first, today) + 1 : 0));
   const totals = weeklyTotals(state.logs, today, WEEKS);
-  const now = totals[WEEKS - 1];
-  const before = totals[WEEKS - 2];
   const stats = exerciseStats(program.plans.flatMap(sessionsOf), state.logs, today, WEEKS);
   return `
-    <section class="you">
+    <section class="progress">
+      <header class="head">
+        <p class="eyebrow">${esc(longDate(today))}</p>
+        <h2 class="title">Progress</h2>
+      </header>
       <div id="ladder">${ladderHtml()}</div>
-      <h2 class="sect">This week</h2>
-      <div class="card week">
-        <div class="stats">
-          ${statHtml(now.sessions, "Workout", "Workouts", now.sessions - before.sessions)}
-          ${statHtml(now.sets, "Set", "Sets", now.sets - before.sets)}
-        </div>
-        ${barsHtml(totals)}
+      <div class="grid2">
+        ${metricHtml("Workouts", "sky", "workout", "workouts", totals, (t) => t.sessions)}
+        ${metricHtml("Sets", "lime", "set", "sets", totals, (t) => t.sets)}
       </div>
-      <h2 class="sect">Exercises</h2>
+      <h2 class="sect">Records</h2>
       ${stats.length ? `<ul class="card rows ex">${stats.map(exRowHtml).join("")}</ul>`
         : `<p class="empty">Your PRs show up here after your first workout.</p>`}
     </section>`;
-}
-
-// Tapping a bar says what it is, under the chart.
-function showRead(el) {
-  const chart = el.closest("[data-chart]");
-  if (!chart) return;
-  chart.querySelector(".read").textContent = el.dataset.read;
-  for (const d of chart.querySelectorAll("[data-dot]")) d.classList.toggle("on", d.dataset.dot === el.dataset.i);
 }
 
 const redrawLadder = () => {
   const el = document.getElementById("ladder");
   if (el) el.innerHTML = ladderHtml();
 };
+
+/* ---------- You: profile and settings, like Strava's You ---------- */
+
+const PERSON = `<svg viewBox="0 0 24 24" width="34" height="34" aria-hidden="true"><circle cx="12" cy="8.5" r="4" fill="currentColor"/><path d="M4.5 20.5c1.4-3.6 4.2-5.5 7.5-5.5s6.1 1.9 7.5 5.5z" fill="currentColor"/></svg>`;
+const avatarHtml = () => {
+  const n = prefs.name.trim();
+  return n ? esc(n.charAt(0).toUpperCase()) : PERSON;
+};
+
+function youHtml() {
+  const all = allTimeTotals(program.plans.flatMap(sessionsOf), state.logs);
+  const steps = ladderState(program.ladder, state.logs, state.tests).steps;
+  const goal = steps.length ? steps[steps.length - 1].name : "";
+  const sub = [goal && `Goal: ${goal}`, all.since && `since ${fmtDate(all.since)}`].filter(Boolean).join(" · ");
+  const themes = [["system", "System"], ["light", "Light"], ["dark", "Dark"]];
+  return `
+    <section class="you">
+      <div class="profile">
+        <span class="avatar" id="avatar">${avatarHtml()}</span>
+        <div class="ptext">
+          <h2 class="pname" id="pname">${esc(prefs.name.trim() || "You")}</h2>
+          ${sub ? `<p class="psub">${esc(sub)}</p>` : ""}
+        </div>
+      </div>
+      <div class="card totals">
+        <div class="sky"><b class="num">${all.workouts}</b><span>${all.workouts === 1 ? "Workout" : "Workouts"}</span></div>
+        <div class="lime"><b class="num">${all.sets}</b><span>Sets</span></div>
+        <div class="gold"><b class="num">${all.prs}</b><span>${all.prs === 1 ? "PR" : "PRs"}</span></div>
+      </div>
+      <h2 class="sect">Settings</h2>
+      <div class="card group">
+        <label class="grow">
+          <span>Name</span>
+          <input id="name" type="text" maxlength="40" autocomplete="off" autocapitalize="words" enterkeyhint="done" placeholder="Add your name" value="${esc(prefs.name)}">
+        </label>
+        <div class="grow stack">
+          <span>Appearance</span>
+          <div class="seg" role="radiogroup" aria-label="Appearance">
+            ${themes.map(([v, label]) => `<button type="button" role="radio" aria-checked="${prefs.theme === v}" data-act="theme" data-theme="${v}">${label}</button>`).join("")}
+          </div>
+        </div>
+      </div>
+      <p class="foot">Everything you log stays on this phone.</p>
+    </section>`;
+}
 
 /* ---------- picking the plan ---------- */
 
@@ -443,6 +527,14 @@ function pickerHtml(picked) {
 
 root.addEventListener("input", (e) => {
   const el = e.target;
+  // His name: only the profile header is redrawn, so the keyboard stays up.
+  if (el.id === "name") {
+    prefs.name = el.value.slice(0, 40);
+    savePrefs();
+    document.getElementById("pname").textContent = prefs.name.trim() || "You";
+    document.getElementById("avatar").innerHTML = avatarHtml();
+    return;
+  }
   if (el.id === "note") {
     const s = sessions()[shownIndex()];
     if (!state.logs[s.key]) return;
@@ -483,6 +575,10 @@ root.addEventListener("focusout", (e) => {
   if (e.target.matches(".f[data-item]") && parseNum(e.target.value) === null) e.target.value = "";
 });
 
+root.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && e.target.id === "name") e.target.blur();
+});
+
 root.addEventListener("submit", (e) => {
   e.preventDefault();
   const form = e.target.closest("form.test");
@@ -517,8 +613,6 @@ function armed(btn, label) {
 const toTop = () => document.body.scrollTo(0, 0);
 
 root.addEventListener("click", (e) => {
-  const read = e.target.closest("[data-read]");
-  if (read) { showRead(read); return; }
   const btn = e.target.closest("[data-act]");
   if (!btn) return;
   const act = btn.dataset.act;
@@ -531,6 +625,13 @@ root.addEventListener("click", (e) => {
   if (act === "closetest") {
     testing = null;
     redrawLadder();
+    return;
+  }
+  if (act === "theme") {
+    prefs.theme = btn.dataset.theme;
+    savePrefs();
+    applyTheme();
+    render();
     return;
   }
   if (act === "picker") {
