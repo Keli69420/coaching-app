@@ -28,12 +28,14 @@ const pagesEl = document.getElementById("pages");
 const statusEl = document.getElementById("status");
 
 let today = todayIso();
-// Four tabs (Keli, 17 Nov): "today" shows only today's workout, "plan" this week's workouts,
-// "progress" the ladder and his numbers, "settings" his name and light/dark.
-// "profile" has no tab: his picture top right opens it, like Apple Fitness. Always opens on today.
+// Three tabs (Keli, 17 Nov): "today" shows only today's workout, "plan" this week's workouts,
+// "progress" the ladder and his numbers. "profile" has no tab: his picture top right opens it,
+// like Apple Fitness, and Settings sit at its bottom as categories. Always opens on today.
 let page = "today";
 let before = "today"; // the page the profile was opened from, for its back button
 let opened = null; // on the profile: the saved workout opened from his activities (its key)
+let setting = null; // on the profile: the settings category he opened ("profile", "appearance", "data")
+let profileY = 0; // where the profile was scrolled to, so ‹ Profile comes back to the same spot
 let program = null; // { ladder, plans, errors }
 let loadError = "";
 let state = tidyLogs(load(), today);
@@ -172,8 +174,7 @@ function render() {
     : `<button type="button" class="chip${pickerOpen ? " on" : ""}" data-act="picker" aria-expanded="${pickerOpen}" aria-label="Plan ${esc(picked.id)}. Tap to switch.">Plan ${esc(picked.id)}</button>`;
   if (pickerOpen || !picked) main.innerHTML = pickerHtml(picked);
   else if (page === "progress") main.innerHTML = progressHtml();
-  else if (page === "profile") main.innerHTML = opened ? sessionHtml(shownIndex()) : profileHtml();
-  else if (page === "settings") main.innerHTML = settingsHtml();
+  else if (page === "profile") main.innerHTML = opened ? sessionHtml(shownIndex()) : setting ? settingHtml(setting) : profileHtml();
   else if (page === "plan" && viewing == null) main.innerHTML = weekHtml();
   else main.innerHTML = sessionHtml(shownIndex());
 }
@@ -503,7 +504,7 @@ const redrawLadder = () => {
   if (el) el.innerHTML = ladderHtml();
 };
 
-/* ---------- his profile (from the picture top right) and Settings (the last tab) ---------- */
+/* ---------- his profile (from the picture top right), with Settings at its bottom ---------- */
 
 const PERSON = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="4" fill="currentColor"/><path d="M4.5 20.5c1.4-3.6 4.2-5.5 7.5-5.5s6.1 1.9 7.5 5.5z" fill="currentColor"/></svg>`;
 // One place draws his picture, top right and on the profile: his initial, or a person until he
@@ -512,7 +513,7 @@ const avatarHtml = () => {
   const n = prefs.name.trim();
   return n ? esc(n.charAt(0).toUpperCase()) : PERSON;
 };
-const PAGE_NAMES = { today: "Today", plan: "Plan", progress: "Progress", settings: "Settings" };
+const PAGE_NAMES = { today: "Today", plan: "Plan", progress: "Progress" };
 
 function profileHtml() {
   const all = allTimeTotals(program.plans.flatMap(sessionsOf), state.logs);
@@ -538,8 +539,13 @@ function profileHtml() {
       <button type="button" class="back edit" data-act="editprofile">Edit profile</button>
       <h2 class="sect">Activities</h2>
       ${acts.length ? `<ul class="acts">${acts.map(activityHtml).join("")}</ul>` : `<p class="empty">Saved workouts show up here.</p>`}
-      <h2 class="sect" id="profsettings">Settings</h2>
-      ${settingsGroupHtml()}
+      <h2 class="sect">Settings</h2>
+      <ul class="card rows">${SETTINGS.map((c) => `
+        <li><button type="button" class="row set" data-act="setting" data-cat="${c.key}">
+          <span class="rtext"><b>${c.label}</b></span>
+          <span class="val">${esc(c.value())}</span>${RIGHT}
+        </button></li>`).join("")}
+      </ul>
     </section>`;
 }
 
@@ -562,31 +568,50 @@ function activityHtml(a) {
     : `<div class="card act">${body}</div>`}</li>`;
 }
 
-function settingsHtml() {
-  return `
-    <section class="settings">
-      <header class="head"><h2 class="title">Settings</h2></header>
-      ${settingsGroupHtml()}
-    </section>`;
-}
+// Settings, in categories (Keli, 17 Nov): a list at the bottom of his profile, each opening its own
+// page with ‹ Profile to go back, like Strava's. A new setting goes into one of these, or a new one.
+const THEMES = [["system", "System"], ["light", "Light"], ["dark", "Dark"]];
+const SETTINGS = [
+  { key: "profile", label: "Profile", value: () => prefs.name.trim() || "Add your name" },
+  { key: "appearance", label: "Appearance", value: () => (THEMES.find(([v]) => v === prefs.theme) || THEMES[0])[1] },
+  { key: "data", label: "Data & privacy", value: () => "On this phone" },
+];
 
-// The settings themselves: on the Settings tab and again at the bottom of the profile.
-function settingsGroupHtml() {
-  const themes = [["system", "System"], ["light", "Light"], ["dark", "Dark"]];
-  return `
+function settingHtml(key) {
+  const cat = SETTINGS.find((c) => c.key === key) || SETTINGS[0];
+  let body = "";
+  if (cat.key === "profile") {
+    body = `
       <div class="card group">
         <label class="grow">
           <span>Name</span>
           <input id="name" type="text" maxlength="40" autocomplete="off" autocapitalize="words" enterkeyhint="done" placeholder="Add your name" value="${esc(prefs.name)}">
         </label>
+      </div>
+      <p class="foot">Shows on your profile and your activities.</p>`;
+  } else if (cat.key === "appearance") {
+    body = `
+      <div class="card group">
         <div class="grow stack">
-          <span>Appearance</span>
           <div class="seg" role="radiogroup" aria-label="Appearance">
-            ${themes.map(([v, label]) => `<button type="button" role="radio" aria-checked="${prefs.theme === v}" data-act="theme" data-theme="${v}">${label}</button>`).join("")}
+            ${THEMES.map(([v, label]) => `<button type="button" role="radio" aria-checked="${prefs.theme === v}" data-act="theme" data-theme="${v}">${label}</button>`).join("")}
           </div>
         </div>
       </div>
-      <p class="foot">Everything you log stays on this phone.</p>`;
+      <p class="foot">System follows your phone's light or dark mode.</p>`;
+  } else {
+    body = `
+      <div class="card info">
+        <p>Everything you log is saved on this phone only. Nothing is sent anywhere.</p>
+        <p>Keep Pathletics on your home screen: deleting it from there deletes your logs too.</p>
+      </div>`;
+  }
+  return `
+    <section class="settings">
+      <button type="button" class="back" data-act="back">${LEFT}<span>Profile</span></button>
+      <header class="head"><h2 class="title">${cat.label}</h2></header>
+      ${body}
+    </section>`;
 }
 
 /* ---------- picking the plan ---------- */
@@ -744,26 +769,35 @@ root.addEventListener("click", (e) => {
   }
   if (act === "back") {
     flush();
-    if (page === "profile") opened = null;
-    else viewing = null;
+    if (page === "profile") {
+      opened = null;
+      setting = null;
+      render();
+      document.body.scrollTo(0, profileY);
+      return;
+    }
+    viewing = null;
     render();
     toTop();
     return;
   }
   if (act === "activity") {
+    profileY = document.body.scrollTop;
     opened = btn.dataset.key;
     render();
     toTop();
     return;
   }
-  if (act === "editprofile") {
-    const name = document.getElementById("name");
-    document.getElementById("profsettings")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    name?.focus({ preventScroll: true });
+  if (act === "setting" || act === "editprofile") {
+    profileY = document.body.scrollTop;
+    setting = act === "editprofile" ? "profile" : btn.dataset.cat;
+    render();
+    toTop();
     return;
   }
   if (act === "unprofile") {
     opened = null;
+    setting = null;
     page = before;
     render();
     toTop();
@@ -827,6 +861,7 @@ root.addEventListener("click", (e) => {
 meEl.addEventListener("click", () => {
   flush();
   opened = null;
+  setting = null;
   if (page === "profile") page = before;
   else { before = page; page = "profile"; }
   testing = null;
@@ -843,6 +878,7 @@ pagesEl.addEventListener("click", (e) => {
   page = btn.dataset.page;
   viewing = null;
   opened = null;
+  setting = null;
   testing = null;
   render();
   toTop();

@@ -1,6 +1,6 @@
 # Pathletics
 
-Four tabs for a client training toward a goal, switched at the bottom: **Today**, **Plan**, **Progress**, **Settings**. His profile opens from his picture top right, like Apple Fitness.
+Three tabs for a client training toward a goal, switched at the bottom: **Today**, **Plan**, **Progress**. His profile opens from his picture top right, like Apple Fitness, and his settings are at the bottom of it.
 
 **The look** (17 Nov, Keli: "analyze the fitness app by apple… use more than just 1 color"): laid out like Apple's Fitness app on iOS 27. Big bold title, black (or light grey) screen, rounded cards, big coloured numbers with the unit in small capitals, a floating tab bar. Before that it was Strava-style with one pink (17 Nov), and before that near-black glow cards (14–17 Nov).
 
@@ -15,13 +15,13 @@ Four colours, each with one meaning, so they read at a glance:
 
 - Apple asks apps not to copy the Activity rings (three nested rings), so the ladder is three separate rings side by side.
 - Numbers use the phone's rounded font (Nunito where the phone has none). Text is the system font. Outfit is only the wordmark, which keeps its fading copies in the header and on the icon.
-- **Light, dark or system:** set under Settings → Appearance. System follows the phone. The rules and all colours are at the top of `styles.css`.
+- **Light, dark or system:** set under Profile → Settings → Appearance. System follows the phone. The rules and all colours are at the top of `styles.css`.
 
 - **Today** (opens here): **today's workout** from the coach's plan, nothing else. Like Yapp, he **starts** it (until then it's a list of what's coming and a Start button), types into one card per exercise with a disc per set, and **saves** it. **Start also starts a clock** at the top, like recording on Strava, with **Pause / Resume** beside it (Keli, 17 Nov); Save stops it. A hit set turns lime; each exercise has a small ring that fills as sets are hit and ticks when done. Saved, it's a summary card (time, sets, new PRs with gold medals, what's next) with Edit and "Delete workout" (two taps).
 - **Plan**: **this week's** workouts, with a segmented bar (lime done, sky up next) and a list marked done, today, up next or missed. Tap one to see it or log it.
 - **Progress**: the **ladder** as three rings (for the first client: pull-ups → chest-to-bar → muscle-up) and a trend card for the step he's on; tap a ring to type a test. Below: workouts and sets this week against last week with mini bars, and one row per exercise with his record and a line of his best per week.
-- **Profile** (his picture top right, Keli 17 Nov): his initial in a pink circle, or a person until he types a name; tapping it opens his name, goal, lifetime workouts, sets and PRs, with a back button to where he was and **Edit profile** (scrolls down to Name). Under that, his **Activities**: every saved workout as a card, newest first, like Strava's (his name, "Today at 18:30", a title after the time of day such as "Evening Legs", then Time, Sets and PRs). Tapping one opens that workout, with ‹ Profile to go back. At the bottom, the same **Settings** as the Settings tab (Keli 17 Nov). A profile picture would show in that same circle: `avatarHtml()` in `app.js` draws it in both places.
-- **Settings** (the last tab, and again at the bottom of the profile): Name and Appearance (System / Light / Dark). Both stay on the phone. `settingsGroupHtml()` draws them in both places.
+- **Profile** (his picture top right, Keli 17 Nov): his initial in a pink circle, or a person until he types a name; tapping it opens his name, goal, lifetime workouts, sets and PRs, with a back button to where he was and **Edit profile** (opens Settings → Profile). Under that, his **Activities**: every saved workout as a card, newest first, like Strava's (his name, "Today at 18:30", a title after the time of day such as "Evening Legs", then Time, Sets and PRs). Tapping one opens that workout, with ‹ Profile to go back. At the bottom, **Settings** (see below). A profile picture would show in that same circle: `avatarHtml()` in `app.js` draws it in both places.
+- **Settings** (Keli 17 Nov: no tab any more, in categories at the bottom of the profile): a list like Strava's, each row showing its current value and opening its own page with ‹ Profile, which goes back to the same spot. **Profile**: Name. **Appearance**: System / Light / Dark. **Data & privacy**: logs stay on this phone, and deleting the home-screen app deletes them. Name and theme stay on the phone. A new setting goes into `SETTINGS` and `settingHtml()` in `app.js`.
 
 **Everything is in English** (Keli, 17 Nov): the screen, the plan-file error messages and the plan itself. From 14 to 17 Nov it was in German; the plan reader still takes German units (`Sek`, `Wdh`).
 
