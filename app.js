@@ -5,6 +5,7 @@ import {
   startSession, finishSession, reopenSession, stopSession, deleteSession, tidyLogs, sessionSummary,
   allTimeTotals, cleanPrefs, elapsed, hasClock, pauseClock, resumeClock, fmtClock, fmtDuration, activities,
 } from "./logic.js";
+import { AVATAR_PX, cropRect, cleanAvatar } from "./picture.js";
 
 // The coach's plan. One file holds the ladder and every starting level (Plan A, B, C...).
 const PLAN_URL = "plans/muscle-up.md";
@@ -12,6 +13,9 @@ const PLAN_URL = "plans/muscle-up.md";
 const KEY = "coach.v1";
 // Settings (light/dark, his name), apart from the logs. index.html reads the theme from it too.
 const PREFS_KEY = "coach.prefs";
+// His profile picture, a small square JPEG, on this phone only. Apart from the settings so the
+// theme script at the top of index.html doesn't have to read it on every start.
+const AVATAR_KEY = "coach.avatar";
 const SAVE_DELAY_MS = 300;
 const ARMED_MS = 3000; // how long a "tap again to…" button waits for the second tap
 // How far back the Progress tab looks: from his first logged week, at least 4 weeks, at most 8,
@@ -40,6 +44,8 @@ let program = null; // { ladder, plans, errors }
 let loadError = "";
 let state = tidyLogs(load(), today);
 let prefs = loadPrefs();
+let avatar = loadAvatar(); // his picture as a data URL, or "" for his initial
+let meDrawn = null; // what the picture top right shows now, so render() only redraws it on a change
 let viewing = null; // on the Plan tab: the workout opened from the week, or null for the week itself
 let pickerOpen = false;
 let testing = null; // ladder step key while its test field is open
@@ -88,6 +94,21 @@ function loadPrefs() {
 
 function savePrefs() {
   try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch { /* still works for this visit */ }
+}
+
+function loadAvatar() {
+  try { return cleanAvatar(localStorage.getItem(AVATAR_KEY)); } catch { return ""; }
+}
+
+// True when it's stored; false means it shows for this visit only.
+function saveAvatar() {
+  try {
+    if (avatar) localStorage.setItem(AVATAR_KEY, avatar);
+    else localStorage.removeItem(AVATAR_KEY);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /* ---------- light or dark ---------- */
@@ -154,7 +175,7 @@ function render() {
   const broken = Boolean(loadError || !program || program.errors.length);
   pagesEl.hidden = broken || !plan() || pickerOpen;
   meEl.hidden = pagesEl.hidden;
-  meEl.innerHTML = avatarHtml();
+  drawMe();
   if (page === "profile") meEl.setAttribute("aria-current", "page");
   else meEl.removeAttribute("aria-current");
   if (broken) {
@@ -507,12 +528,54 @@ const redrawLadder = () => {
 /* ---------- his profile (from the picture top right), with Settings at its bottom ---------- */
 
 const PERSON = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="4" fill="currentColor"/><path d="M4.5 20.5c1.4-3.6 4.2-5.5 7.5-5.5s6.1 1.9 7.5 5.5z" fill="currentColor"/></svg>`;
-// One place draws his picture, top right and on the profile: his initial, or a person until he
-// types a name. A profile picture (on the Later list) goes here as an <img>, and shows in both.
+// One place draws his picture: top right, on the profile, on his activities and in Settings.
+// His photo when he has chosen one (Keli, 17 Nov), else his initial, else a person.
 const avatarHtml = () => {
+  if (avatar) return `<img src="${avatar}" alt="">`; // cleanAvatar() lets only base64 through
   const n = prefs.name.trim();
   return n ? esc(n.charAt(0).toUpperCase()) : PERSON;
 };
+// The picture top right, redrawn only when it changes: a photo redrawn on every tap would flicker.
+function drawMe() {
+  const html = avatarHtml();
+  if (html === meDrawn) return;
+  meEl.innerHTML = html;
+  meDrawn = html;
+}
+
+// A photo from his library → the middle square, 256 px, as a JPEG. Through an <img> so the
+// phone turns it the right way up. White behind it, in case the photo has see-through parts.
+function shrinkPhoto(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const r = cropRect(img.naturalWidth, img.naturalHeight);
+        if (!r) throw new Error("empty picture");
+        const c = document.createElement("canvas");
+        c.width = c.height = AVATAR_PX;
+        const ctx = c.getContext("2d");
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, AVATAR_PX, AVATAR_PX);
+        ctx.imageSmoothingQuality = "high";
+        ctx.drawImage(img, r.x, r.y, r.side, r.side, 0, 0, AVATAR_PX, AVATAR_PX);
+        const out = cleanAvatar(c.toDataURL("image/jpeg", 0.85));
+        if (out) resolve(out);
+        else reject(new Error("picture too big"));
+      } catch (err) {
+        reject(err);
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("not a picture"));
+    };
+    img.src = url;
+  });
+}
 const PAGE_NAMES = { today: "Today", plan: "Plan", progress: "Progress" };
 
 function profileHtml() {
@@ -583,12 +646,19 @@ function settingHtml(key) {
   if (cat.key === "profile") {
     body = `
       <div class="card group">
+        <div class="grow picrow">
+          <span class="avatar">${avatarHtml()}</span>
+          <span class="picacts">
+            <label class="picbtn">${avatar ? "Change photo" : "Choose photo"}<input id="photo" class="vh" type="file" accept="image/*"></label>
+            ${avatar ? `<button type="button" class="picbtn quiet2" data-act="unphoto">Remove photo</button>` : ""}
+          </span>
+        </div>
         <label class="grow">
           <span>Name</span>
           <input id="name" type="text" maxlength="40" autocomplete="off" autocapitalize="words" enterkeyhint="done" placeholder="Add your name" value="${esc(prefs.name)}">
         </label>
       </div>
-      <p class="foot">Shows on your profile and your activities.</p>`;
+      <p class="foot">Your photo and name show on your profile and your activities. Both stay on this phone.</p>`;
   } else if (cat.key === "appearance") {
     body = `
       <div class="card group">
@@ -632,13 +702,27 @@ function pickerHtml(picked) {
 
 /* ---------- typing ---------- */
 
+root.addEventListener("change", async (e) => {
+  if (e.target.id !== "photo") return;
+  const file = e.target.files && e.target.files[0];
+  e.target.value = ""; // so choosing the same photo again still counts
+  if (!file) return;
+  try {
+    avatar = await shrinkPhoto(file);
+    statusEl.textContent = saveAvatar() ? "" : "photo not saved";
+  } catch {
+    statusEl.textContent = "couldn't use that photo";
+  }
+  render();
+});
+
 root.addEventListener("input", (e) => {
   const el = e.target;
   // His name: only the picture top right is redrawn, so the keyboard stays up.
   if (el.id === "name") {
     prefs.name = el.value.slice(0, 40);
     savePrefs();
-    meEl.innerHTML = avatarHtml();
+    drawMe();
     if (page === "profile") {
       const shown = prefs.name.trim() || "You";
       main.querySelectorAll(".avatar").forEach((a) => { a.innerHTML = avatarHtml(); });
@@ -736,6 +820,12 @@ root.addEventListener("click", (e) => {
   if (act === "closetest") {
     testing = null;
     redrawLadder();
+    return;
+  }
+  if (act === "unphoto") {
+    avatar = "";
+    statusEl.textContent = saveAvatar() ? "" : "photo not saved";
+    render();
     return;
   }
   if (act === "theme") {
