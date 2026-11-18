@@ -15,13 +15,15 @@ const line = (v, max) => (typeof v === "string" ? v.replace(/[\u0000-\u001F\u007
 const bytes = (v) => new TextEncoder().encode(JSON.stringify(v)).length;
 
 // One of his plans as the row that goes up: { title, summary, body }. Only what's needed to draw
-// and use it: no ids from this phone, no empty workouts, nothing about where it came from.
+// and use it: week and workout ids (random, so a copy can be matched up on update), no empty workouts, nothing about where it came from.
 // Returns { row } or { error: "empty" | "big" }.
 export function planUpload(plan) {
   if (!plan || checkPlan(plan)) return { error: "empty" };
   const weeks = plan.weeks.map((w) => ({
+    id: w.id,
     title: line(w.title, LIMITS.title) || "Week",
     days: w.days.map((d) => ({
+      id: d.id,
       title: line(d.title, LIMITS.title) || "Workout",
       items: d.items.map(cleanItem).filter(Boolean),
     })).filter((d) => d.items.length),
@@ -59,7 +61,7 @@ export function cleanShared(raw) {
 export function sharedPlan(raw) {
   const head = cleanShared(raw);
   if (!head || !isObj(raw.body)) return null;
-  const plan = cleanPlan({ title: head.title, weeks: raw.body.weeks, by: head.author?.name, src: head.id }, { fresh: true });
+  const plan = cleanPlan({ title: head.title, weeks: raw.body.weeks, by: head.author?.name, src: head.id }, { fresh: true, adopt: true });
   if (!plan || checkPlan(plan)) return null;
   return plan;
 }

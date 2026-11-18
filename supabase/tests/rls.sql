@@ -21,6 +21,11 @@ declare
   gf uuid; -- a friends group with 10 people
   gc uuid; -- a coaching group with 10 people
   gk uuid; -- a's coaching group that b takes over
+  ga uuid; -- a's coaching group for assigning plans
+  pa uuid; -- a's unlisted plan to assign
+  pa2 uuid; -- a's second plan
+  pbx uuid; -- b's plan
+  asg uuid; -- an assignment
   px uuid; -- c's post of a's plan, once it's listed
   r jsonb;
   n int;
@@ -323,6 +328,121 @@ begin
   assert (select kind from public.groups where id = gk) = 'friends', 'a group with a free owner is still a coaching group';
   checks := checks + 4;
 
+
+  -- Assigning: a (a coach) gives b a plan in a coaching group, with c as a third member.
+  perform set_config('request.jwt.claims', json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  ga := public.create_group('Assign crew');
+  k := public.group_invite(ga);
+  perform set_config('request.jwt.claims', json_build_object('sub', b, 'role', 'authenticated')::text, true);
+  assert (public.join_with_code(k, null) ->> 'group')::uuid = ga, 'b could not join the assign group';
+  -- c has used up his guesses at codes, so the owner's database adds him instead.
+  reset role;
+  insert into public.group_members (group_id, user_id) values (ga, c);
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims', json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  insert into public.plans (title, body) values ('Assigned plan', '{}') returning id into pa;
+  insert into public.plans (title, body) values ('Second plan', '{}') returning id into pa2;
+  assert not (select listed from public.plans where id = pa), 'the plan to assign is listed';
+  asg := public.assign_plan(ga, b, pa);
+  assert asg is not null and (select plan_id from public.assignments where id = asg) = pa, 'assign did not make the assignment';
+  assert exists (select 1 from public.assignments where id = asg and coach = a and student = b), 'a cannot see what he assigned';
+  checks := checks + 2;
+
+  perform set_config('request.jwt.claims', json_build_object('sub', b, 'role', 'authenticated')::text, true);
+  assert exists (select 1 from public.assignments where id = asg), 'the student cannot see his assignment';
+  assert exists (select 1 from public.plans where id = pa), 'the student cannot read the assigned (unlisted) plan';
+  assert not exists (select 1 from public.plans where id = pa2), 'the student sees a plan that was not assigned';
+  checks := checks + 3;
+
+  perform set_config('request.jwt.claims', json_build_object('sub', c, 'role', 'authenticated')::text, true);
+  assert not exists (select 1 from public.assignments where id = asg), 'a third member sees the assignment';
+  assert not exists (select 1 from public.plans where id = pa), 'a third member sees the assigned plan';
+  checks := checks + 2;
+
+  -- Assigning again replaces: still one row for b.
+  perform set_config('request.jwt.claims', json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  assert public.assign_plan(ga, b, pa2) = asg, 're-assigning made a new row';
+  select count(*) into n from public.assignments where group_id = ga and student = b;
+  assert n = 1, 're-assigning left ' || n || ' rows';
+  assert (select plan_id from public.assignments where id = asg) = pa2, 're-assigning did not replace the plan';
+  checks := checks + 3;
+  perform set_config('request.jwt.claims', json_build_object('sub', b, 'role', 'authenticated')::text, true);
+  assert not exists (select 1 from public.plans where id = pa), 'the student still reads the replaced plan';
+  assert exists (select 1 from public.plans where id = pa2), 'the student cannot read the new plan';
+  checks := checks + 2;
+
+  -- Refusals.
+  perform set_config('request.jwt.claims', json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  begin perform public.assign_plan(g, b, pa); assert false, 'assigned in a friends group';
+  exception when insufficient_privilege then checks := checks + 1; end;
+  begin perform public.assign_plan(ga, b, pl2); assert false, 'assigned a plan that is not his';
+  exception when no_data_found then checks := checks + 1; end;
+  begin perform public.assign_plan(ga, d, pa); assert false, 'assigned to a non-member';
+  exception when no_data_found then checks := checks + 1; end;
+  begin perform public.assign_plan(ga, a, pa); assert false, 'assigned to himself';
+  exception when insufficient_privilege then checks := checks + 1; end;
+  begin perform public.assign_plan(gen_random_uuid(), b, pa); assert false, 'assigned in a group that does not exist';
+  exception when no_data_found then checks := checks + 1; end;
+  perform set_config('request.jwt.claims', json_build_object('sub', b, 'role', 'authenticated')::text, true);
+  insert into public.plans (title, body) values ('b''s own', '{}') returning id into pbx;
+  begin perform public.assign_plan(gk, a, pbx); assert false, 'a free owner assigned a plan';
+  exception when insufficient_privilege then checks := checks + 1; end;
+  begin perform public.assign_plan(ga, c, pbx); assert false, 'a member assigned in a group he does not own';
+  exception when insufficient_privilege then checks := checks + 1; end;
+  perform set_config('request.jwt.claims', json_build_object('sub', d, 'role', 'authenticated')::text, true);
+  begin perform public.assign_plan(ga, b, pa); assert false, 'someone without a profile assigned';
+  exception when insufficient_privilege then checks := checks + 1; end;
+  perform set_config('role', 'anon', true);
+  begin perform public.assign_plan(ga, b, pa); assert false, 'signed out could assign';
+  exception when insufficient_privilege then checks := checks + 1; end;
+  begin perform 1 from public.assignments; assert false, 'signed out could read assignments';
+  exception when insufficient_privilege then checks := checks + 1; end;
+  perform set_config('role', 'authenticated', true);
+
+  -- The app cannot write assignments directly.
+  perform set_config('request.jwt.claims', json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  begin insert into public.assignments (group_id, coach, student, plan_id) values (ga, a, c, pa);
+    assert false, 'inserted an assignment directly';
+  exception when insufficient_privilege then checks := checks + 1; end;
+  begin update public.assignments set plan_id = pa where id = asg; assert false, 'updated an assignment directly';
+  exception when insufficient_privilege then checks := checks + 1; end;
+  perform set_config('request.jwt.claims', json_build_object('sub', b, 'role', 'authenticated')::text, true);
+  begin update public.assignments set student = c where id = asg; assert false, 'the student updated an assignment';
+  exception when insufficient_privilege then checks := checks + 1; end;
+
+  -- The student dismisses it; the plan row is no longer his to read.
+  delete from public.assignments where id = asg;
+  get diagnostics n = row_count; assert n = 1, 'the student could not dismiss his assignment';
+  assert not exists (select 1 from public.plans where id = pa2), 'the student still reads a dismissed plan';
+  perform set_config('request.jwt.claims', json_build_object('sub', c, 'role', 'authenticated')::text, true);
+  delete from public.assignments where group_id = ga;
+  get diagnostics n = row_count; assert n = 0, 'a third member deleted an assignment';
+  checks := checks + 3;
+
+  -- The student leaving the group removes the assignment.
+  perform set_config('request.jwt.claims', json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  asg := public.assign_plan(ga, b, pa);
+  perform set_config('request.jwt.claims', json_build_object('sub', b, 'role', 'authenticated')::text, true);
+  delete from public.group_members where group_id = ga and user_id = b;
+  get diagnostics n = row_count; assert n = 1, 'b could not leave the assign group';
+  reset role;
+  assert not exists (select 1 from public.assignments where id = asg), 'the assignment stayed after the student left';
+  checks := checks + 2;
+  perform set_config('role', 'authenticated', true);
+
+  -- The coach can take one back; deleting the plan removes the assignment.
+  perform set_config('request.jwt.claims', json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  asg := public.assign_plan(ga, c, pa);
+  delete from public.assignments where id = asg;
+  get diagnostics n = row_count; assert n = 1, 'the coach could not take an assignment back';
+  asg := public.assign_plan(ga, c, pa);
+  delete from public.plans where id = pa;
+  reset role;
+  assert not exists (select 1 from public.assignments where id = asg), 'the assignment stayed after its plan was deleted';
+  checks := checks + 2;
+  perform set_config('role', 'authenticated', true);
+  delete from public.plans where id in (pa2, pbx);
+
   perform set_config('request.jwt.claims', json_build_object('sub', a, 'role', 'authenticated')::text, true);
   delete from public.posts where id = pb;
   get diagnostics n = row_count; assert n = 1, 'the owner could not remove a post in the group';
@@ -346,7 +466,7 @@ begin
 
   -- Clean up: delete the made-up people and codes.
   delete from auth.users where id in (a, b, c, d) or id::text like '7e570000-0000-4000-8000-0000000001%';
-  delete from public.groups where id in (gf, gc, gk, g2);
+  delete from public.groups where id in (gf, gc, gk, g2, ga);
   delete from private.invites where code like 'TEST%';
   assert not exists (select 1 from public.profiles where id in (a, b, c, d) or id::text like '7e570000-%'), 'test people left behind';
 

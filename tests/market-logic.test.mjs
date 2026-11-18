@@ -24,10 +24,29 @@ test("a plan goes up with what's needed to use it, and nothing from this phone",
   assert.deepEqual(row, {
     title: "Gym basics",
     summary: "1 week · 1 workout",
-    body: { weeks: [{ title: "Week 1", days: [{ title: "Workout 1", items: [{ name: "Squat", sets: 3, amount: 8, unit: "reps", note: "deep" }] }] }] },
+    body: { weeks: [{ id: p.weeks[0].id, title: "Week 1", days: [{ id: p.weeks[0].days[0].id, title: "Workout 1", items: [{ name: "Squat", sets: 3, amount: 8, unit: "reps", note: "deep" }] }] }] },
   });
   const text = JSON.stringify(row);
-  for (const secret of [p.id, p.weeks[0].id, ID, ID2, "Ann"]) assert.ok(!text.includes(secret), `${secret} went up`);
+  for (const secret of [p.id, ID, ID2, "Ann"]) assert.ok(!text.includes(secret), `${secret} went up`);
+});
+
+test("planUpload includes each week's and workout's local id", () => {
+  const p = sample();
+  const { row } = planUpload(p);
+  assert.equal(row.body.weeks[0].id, p.weeks[0].id);
+  assert.equal(row.body.weeks[0].days[0].id, p.weeks[0].days[0].id);
+});
+
+test("sharedPlan records each part's source id as from, with new ids", () => {
+  const p = sample();
+  const { row } = planUpload(p);
+  const mine = sharedPlan({ id: ID, ...row, author: { id: ID2, name: "Ann" } });
+  assert.equal(mine.weeks[0].from, p.weeks[0].id);
+  assert.equal(mine.weeks[0].days[0].from, p.weeks[0].days[0].id);
+  assert.notEqual(mine.weeks[0].id, p.weeks[0].id);
+  const bad = sharedPlan({ id: ID, title: "x", body: { weeks: [{ id: "NOT valid!", days: [{ id: "x", items: [{ name: "Dip" }] }] }] } });
+  assert.equal(bad.weeks[0].from, undefined);
+  assert.equal(bad.weeks[0].days[0].from, undefined);
 });
 
 test("an empty plan or a huge one doesn't go up, and says why", () => {

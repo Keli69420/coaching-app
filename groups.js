@@ -9,12 +9,13 @@ import {
   cleanPost, cleanGroup, cleanMember, cleanCode, fmtCode, timeAgo, checkJoin, joinError, refusal, CAPTION_MAX, NAME_MAX,
 } from "./share-logic.js";
 import { cleanAvatar } from "./picture.js";
+import { initCoach, coachMember, coachGroupLoad, coachGroupClick } from "./coach.js";
 
 export const groupsOn = configured;
 
 // What app.js lends this file: its drawing helpers, his name and picture, and the page it's on.
 let ctx;
-export function initGroups(c) { ctx = c; }
+export function initGroups(c) { ctx = c; initCoach(c); }
 const esc = (s) => ctx.esc(s);
 
 const POSTS = "id,kind,audience,group_id,plan_id,caption,snapshot,created_at,author:profiles(id,name)";
@@ -160,12 +161,15 @@ function inviteHtml(g) {
 
 function memberHtml(m) {
   const you = m.id === me()?.id;
+  const co = coachMember(m, G.group); // a coach's "Assign a plan", in a coaching group he owns
+  const sub = [m.owner ? "Owner" : "", co?.sub || ""].filter(Boolean).join(" · ");
   return `
     <li class="mrow">
       <span class="avatar sm">${avatarOf(m)}</span>
-      <span class="rtext"><b>${esc(m.name)}${you ? " (you)" : ""}</b>${m.owner ? "<small>Owner</small>" : ""}</span>
+      <span class="rtext"><b>${esc(m.name)}${you ? " (you)" : ""}</b>${sub ? `<small>${sub}</small>` : ""}</span>
+      ${co ? co.button : ""}
       ${G.group.owner && !you ? `<button type="button" class="gact" data-act="g-remove" data-id="${m.id}">Remove</button>` : ""}
-    </li>`;
+    </li>${co?.below || ""}`;
 }
 
 function newGroupHtml() {
@@ -450,6 +454,7 @@ async function openGroup(g) {
     });
     redraw();
     fetchAvatars([...G.group.posts.map((p) => p.author?.id), ...members.map((m) => m.id)]);
+    if (G.group.owner && G.group.kind === "coaching") coachGroupLoad(g.id);
   } catch (e) {
     if (n === seqGroup) failed(e);
   }
@@ -590,6 +595,7 @@ export async function groupsClick(act, btn) {
   if (act === "g-home") { to("home"); G.group = null; load(); return; }
   if (act === "g-open") { G.note = ""; openGroup(G.groups.find((g) => g.id === id)); return; }
   if (act === "g-retry") { G.error = ""; if (G.view === "group" && G.group) openGroup(G.group); else load(); return; }
+  if (act === "g-asg" || act === "g-asgpick") { coachGroupClick(act, btn); return; }
   if (act === "g-unshare") { G.share = null; ctx.render(); ctx.toTop(); return; }
   if (act === "g-gogroups") { G.share = null; ctx.goGroups(); return; }
   if (act === "g-aud") { G.share.audience = btn.dataset.aud; redraw(); return; }

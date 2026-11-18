@@ -164,3 +164,36 @@ test("what's saved is read defensively", () => {
   assert.match(newPlanId(seeded()), /^u[a-z0-9]{8}$/);
   assert.equal(findDay(p, "nope"), null);
 });
+
+test("cleanPlan keeps asg when not fresh, drops it when malformed or fresh", () => {
+  const asg = { id: "00000000-0000-4000-8000-000000000001", plan: "00000000-0000-4000-8000-000000000002", at: 1700000000000, coach: "Coach Cam" };
+  const base = sample();
+  assert.deepEqual(cleanPlan({ ...base, asg }).asg, asg);
+  assert.equal(cleanPlan({ ...base, asg }, { fresh: true }).asg, undefined);
+  assert.equal(cleanPlan({ ...base, asg: { ...asg, coach: "x".repeat(99) } }).asg.coach.length, LIMITS.name);
+  for (const bad of [{ ...asg, id: "nope" }, { ...asg, plan: 5 }, { ...asg, at: "1" }, { ...asg, at: NaN }, { ...asg, coach: 3 }, "g1", null, [asg]]) {
+    assert.equal(cleanPlan({ ...base, asg: bad }).asg, undefined);
+  }
+  assert.equal(cleanPlan(base).asg, undefined);
+});
+
+test("cleanPlan keeps a valid from when not fresh, drops it when fresh or malformed; copyPlan drops it", () => {
+  const base = sample();
+  base.weeks[0].from = "wabc1234";
+  base.weeks[0].days[0].from = "dxyz9876";
+  const kept = cleanPlan(base);
+  assert.equal(kept.weeks[0].from, "wabc1234");
+  assert.equal(kept.weeks[0].days[0].from, "dxyz9876");
+  const fresh = cleanPlan(base, { fresh: true });
+  assert.equal(fresh.weeks[0].from, undefined);
+  assert.equal(fresh.weeks[0].days[0].from, undefined);
+  assert.equal(copyPlan(base).weeks[0].from, undefined);
+  base.weeks[0].from = "BAD id";
+  base.weeks[0].days[0].from = 5;
+  const bad = cleanPlan(base);
+  assert.equal(bad.weeks[0].from, undefined);
+  assert.equal(bad.weeks[0].days[0].from, undefined);
+  const adopted = cleanPlan({ title: "x", weeks: [{ id: "wsrc1234", days: [{ id: "dsrc1234", items: [{ name: "Dip" }] }] }] }, { fresh: true, adopt: true });
+  assert.equal(adopted.weeks[0].from, "wsrc1234");
+  assert.notEqual(adopted.weeks[0].id, "wsrc1234");
+});

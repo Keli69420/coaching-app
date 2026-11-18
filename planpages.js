@@ -10,10 +10,11 @@ import {
 } from "./plans.js";
 import { planBlock, limitText } from "./coach-logic.js";
 import { registerPlans, findRowHtml, shareBlockHtml, planDeleted } from "./market.js";
+import { initCoach, registerCoachPlans, refreshAssignments, incomingHtml, updateReady, assignedBlockHtml, coachClick } from "./coach.js";
 
 // Raised when this file gains something app.js or market.js need from it (2: shared plans).
 // app.js checks it, like LOGIC_V, so a copy saved by an older version is reloaded, not half-used.
-export const PAGES_V = 3;
+export const PAGES_V = 4;
 
 const KEY = "coach.plans";
 let ctx = null;
@@ -39,7 +40,7 @@ function save() {
   }
 }
 
-export function initPlans(c) { ctx = c; }
+export function initPlans(c) { ctx = c; initCoach(c); }
 
 // His own plans, ready for sessionsOfAny(): the same shape as the coach's file gives.
 export function ownPlans() {
@@ -47,8 +48,8 @@ export function ownPlans() {
   return shaped;
 }
 
-// What market.js needs of his plans: look one up, add a saved one, note what was shared, open a page.
-registerPlans({
+// What market.js and coach.js need of his plans: look one up, add one, swap one, note what was shared, open a page.
+const api = {
   all: () => store.plans,
   get: (id) => store.plans.find((p) => p.id === id) ?? null,
   bySrc: (src) => store.plans.find((p) => p.src === src) ?? null,
@@ -76,7 +77,17 @@ registerPlans({
     ctx.render();
     ctx.toTop();
   },
-});
+  // Swaps a plan for a new version of it (the coach's update). False when it isn't there.
+  replace(id, plan) {
+    const i = store.plans.findIndex((p) => p.id === id);
+    if (i < 0) return false;
+    store.plans[i] = plan;
+    save();
+    return true;
+  },
+};
+registerPlans(api);
+registerCoachPlans(api);
 
 export const planPageOpen = () => P.open != null;
 export function closePlanPage() { P.open = null; P.edit = false; P.note = ""; P.warn = ""; P.limit = ""; }
@@ -120,9 +131,10 @@ export function plansListHtml(heading = "Your plans") {
       <span class="rtext"><b>${esc(name)}</b><small>${esc(sub)}</small></span>
       ${RIGHT}
     </button></li>`;
+  setTimeout(refreshAssignments, 0); // signed in: asks for plans a coach gave him (at most every 30 s)
   const rows = [
     ...ctx.filePlans().map((p) => row(p.id, planLabel(p.id), fileSummary(p))),
-    ...store.plans.map((p) => row(p.id, planLabel(p.id), p.by ? `${planSummary(p)} · by ${p.by}` : planSummary(p))),
+    ...store.plans.map((p) => row(p.id, planLabel(p.id), (p.by ? `${planSummary(p)} · by ${p.by}` : planSummary(p)) + (updateReady(p) ? " · update ready" : ""))),
   ];
   const full = store.plans.length >= LIMITS.plans;
   const limit = P.limit;
@@ -130,6 +142,7 @@ export function plansListHtml(heading = "Your plans") {
   return `
     <h2 class="sect">${esc(heading)}</h2>
     <ul class="card rows">
+      ${incomingHtml()}
       ${rows.join("")}
       ${full ? "" : `<li><button type="button" class="row add" data-act="p-new"><span class="gicon plus" aria-hidden="true">+</span><span class="rtext"><b>New plan</b></span></button></li>`}
       ${findRowHtml()}
@@ -159,7 +172,7 @@ export function planPageHtml() {
     <section class="planpage">
       <button type="button" class="back" data-act="p-back">${LEFT}<span>Plan</span></button>
       <header class="head">
-        <p class="eyebrow">${own ? (own.by ? `By ${esc(own.by)}` : "Your plan") : "From your coach"}</p>
+        <p class="eyebrow">${own ? (own.asg ? `From your coach · ${esc(own.asg.coach)}` : own.by ? `By ${esc(own.by)}` : "Your plan") : "From your coach"}</p>
         <h2 class="title">${esc(planLabel(P.open))}</h2>
         <p class="psum">${esc(own ? planSummary(own) : fileSummary(file))}</p>
       </header>
@@ -172,7 +185,8 @@ export function planPageHtml() {
         ${own ? `<button type="button" class="ghostbtn" data-act="p-edit">Edit</button>` : ""}
         <button type="button" class="ghostbtn plain" data-act="p-copy">${own ? "Duplicate" : "Copy to change it"}</button>
       </div>
-      ${own && !missing ? (own.by
+      ${own?.asg ? assignedBlockHtml(own) : ""}
+      ${own && !missing && !own.asg ? (own.by
         // Someone else's plan, saved: his to use and change, not to hand on under his name.
         ? `<p class="foot">Saved from ${esc(own.by)}. To share a version of your own, duplicate it first.</p>`
         : shareBlockHtml(own)) : ""}
@@ -271,6 +285,7 @@ function redraw(focus) {
 }
 
 export function plansClick(act, btn) {
+  if (act.startsWith("p-asg")) { coachClick(act, btn); return; }
   const plan = mine(P.open);
   if (act === "p-open") {
     P.open = btn.dataset.plan;

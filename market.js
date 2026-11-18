@@ -76,7 +76,7 @@ export function shareBlockHtml(plan) {
 
 // Sends his plan up: a new copy the first time, the same copy again after that. Returns its id
 // on the server. A copy that was removed there (by him elsewhere, or by Keli) is made anew.
-async function sendUp(plan, extra = {}) {
+export async function sendUp(plan, extra = {}) {
   const up = planUpload(plan);
   if (up.error) throw Object.assign(new Error(uploadError(up.error)), { said: true });
   if (plan.pub) {

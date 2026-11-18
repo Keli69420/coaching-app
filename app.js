@@ -57,8 +57,8 @@ const statusEl = document.getElementById("status");
 const oldPage = !meEl || !pagesEl?.querySelector('[data-page="groups"]');
 // An older logic.js doesn't know about weights and would drop them from his logs on loading.
 const oldLogic = !(LOGIC.LOGIC_V >= 2);
-// An older planpages.js works, but without shared plans; a reload brings the new one.
-const oldPages = !(PAGES.PAGES_V >= 3);
+// An older planpages.js works, but without shared plans and assigned plans; a reload brings the new one.
+const oldPages = !(PAGES.PAGES_V >= 4);
 if (oldPage || oldLogic || oldPages) {
   let again = false;
   try {
@@ -244,7 +244,8 @@ function render() {
     else b.removeAttribute("aria-current");
   }
   const broken = Boolean(loadError || !program || program.errors.length);
-  pagesEl.hidden = broken || !plan();
+  // The tabs show without a plan too (since 18 Nov): a new member reaches Groups to join his coach.
+  pagesEl.hidden = broken;
   meEl.hidden = pagesEl.hidden;
   drawMe();
   if (page === "profile") meEl.setAttribute("aria-current", "page");
@@ -263,9 +264,10 @@ function render() {
   const picked = plan();
   // Switching plans is on the Plan tab since 18 Nov (the header had a chip for it before).
   chipEl.innerHTML = "";
-  // No plan chosen yet (several in the coach's file, or his own was deleted): the list of plans,
-  // and a plan's page opened from it, with no tabs until he picks one.
-  if (!picked) main.innerHTML = marketOpen() ? marketHtml() : planPageOpen() ? planPageHtml() : `<section class="plan">${plansListHtml("Pick your plan")}</section>`;
+  // No plan chosen yet: Today and Plan show the list of plans (and a plan's page opened from it);
+  // Groups, Progress and Profile work as usual.
+  const noPlanPage = !picked && !sharing() && (page === "today" || page === "plan" || (page === "profile" && opened));
+  if (noPlanPage) main.innerHTML = marketOpen() ? marketHtml() : planPageOpen() ? planPageHtml() : `<section class="plan">${plansListHtml("Pick your plan")}</section>`;
   else if (sharing()) main.innerHTML = shareHtml();
   // Find plans, or a shared plan opened from a post: over whatever tab he's on.
   else if (marketOpen()) main.innerHTML = marketHtml();

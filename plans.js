@@ -5,6 +5,7 @@
 //   { id, title, by?, src?, pub?, listed?, stale?, weeks: [{ id, title, days: [{ id, title, items: [item] }] }] }
 //   item: { name, sets (1–10), amount (a number, or null for "as many as he can"), unit ("reps"|"sec"), note }
 // `by` is who made it when it's a copy of someone's shared plan, `src` that plan's id on the server.
+// `asg` marks a plan the coach assigned: { id, plan, at, coach } (coach-logic.js).
 // `pub`, `listed` and `stale` are about his own plan's shared copy (market.js).
 //
 // Weeks and workouts have ids of their own, and logs hang on those ids, so renaming one never
@@ -44,7 +45,7 @@ export function cleanItem(raw) {
 
 // A whole plan. `fresh` gives every part a new id: for a copy, or a plan that came from someone else,
 // whose ids mean nothing here. Returns null when there's nothing plan-like in it.
-export function cleanPlan(raw, { fresh = false, rand = Math.random } = {}) {
+export function cleanPlan(raw, { fresh = false, adopt = false, rand = Math.random } = {}) {
   if (!isObj(raw) || !Array.isArray(raw.weeks)) return null;
   const used = new Set();
   const idOf = (given, lead) => {
@@ -53,18 +54,29 @@ export function cleanPlan(raw, { fresh = false, rand = Math.random } = {}) {
     used.add(id);
     return id;
   };
+  // `from`: the id this week or workout has in the plan it was copied from (a shared or assigned plan),
+  // so an update can find it again. With `adopt` it is the raw part's own id; a fresh copy drops it.
+  const fromOf = (part) => {
+    const v = adopt ? part.id : fresh ? null : part.from;
+    return typeof v === "string" && ID.test(v) ? v : null;
+  };
+  const withFrom = (obj, part) => {
+    const f = fromOf(part);
+    if (f) obj.from = f;
+    return obj;
+  };
   const plan = {
     id: !fresh && typeof raw.id === "string" && /^u[a-z0-9]{8}$/.test(raw.id) ? raw.id : newPlanId(rand),
     title: text(raw.title, LIMITS.title) || "My plan",
-    weeks: raw.weeks.filter(isObj).slice(0, LIMITS.weeks).map((w, i) => ({
+    weeks: raw.weeks.filter(isObj).slice(0, LIMITS.weeks).map((w, i) => withFrom({
       id: idOf(w.id, "w"),
       title: text(w.title, LIMITS.title) || `Week ${i + 1}`,
-      days: (Array.isArray(w.days) ? w.days : []).filter(isObj).slice(0, LIMITS.days).map((d, j) => ({
+      days: (Array.isArray(w.days) ? w.days : []).filter(isObj).slice(0, LIMITS.days).map((d, j) => withFrom({
         id: idOf(d.id, "d"),
         title: text(d.title, LIMITS.title) || `Workout ${j + 1}`,
         items: (Array.isArray(d.items) ? d.items : []).map(cleanItem).filter(Boolean).slice(0, LIMITS.items),
-      })),
-    })),
+      }, d)),
+    }, w)),
   };
   const by = text(raw.by, LIMITS.name);
   if (by) plan.by = by;
@@ -75,6 +87,15 @@ export function cleanPlan(raw, { fresh = false, rand = Math.random } = {}) {
     plan.pub = raw.pub;
     if (raw.listed === true) plan.listed = true;
     if (raw.stale === true) plan.stale = true;
+  }
+  // A coach's plan saved on his phone: which assignment and which server plan it came from, when that
+  // plan was last changed, and the coach's name. Never given to a fresh copy.
+  if (!fresh && isObj(raw.asg)) {
+    const a = raw.asg;
+    const uuid = (v) => typeof v === "string" && /^[0-9a-f-]{36}$/i.test(v);
+    if (uuid(a.id) && uuid(a.plan) && Number.isFinite(a.at) && typeof a.coach === "string") {
+      plan.asg = { id: a.id, plan: a.plan, at: a.at, coach: text(a.coach, LIMITS.name) };
+    }
   }
   return plan;
 }
