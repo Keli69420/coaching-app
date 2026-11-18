@@ -1,5 +1,5 @@
 import {
-  parsePlan, sessionsOf, currentIndex, planDone, hit, fmtTarget, fmtPrescription,
+  parsePlan, currentIndex, planDone, hit, fmtTarget, fmtPrescription,
   ladderState, stepHistory, parseNum, todayIso, fmtDate, cleanState, emptyState, setValue, setNote, setTest, hasValues,
   weeklyTotals, exerciseStats, sparkPoints, weeksAgo, weeksAgoLabel, fmtVal,
   startSession, finishSession, reopenSession, stopSession, deleteSession, tidyLogs, sessionSummary,
@@ -9,6 +9,10 @@ import {
 // doesn't have would stop the app before it could do anything about it.
 import * as LOGIC from "./logic.js";
 import { parseKg, setKg, lastKg, fmtKg } from "./weight.js";
+import { sessionsOfAny } from "./plans.js";
+import {
+  initPlans, ownPlans, planPageOpen, closePlanPage, planLabel, plansListHtml, planPageHtml, plansClick, plansInput, plansBlur,
+} from "./planpages.js";
 import { AVATAR_PX, cropRect, cleanAvatar } from "./picture.js";
 import { activitySnapshot, skillSnapshot } from "./share-logic.js";
 import {
@@ -81,7 +85,6 @@ let prefs = loadPrefs();
 let avatar = loadAvatar(); // his picture as a data URL, or "" for his initial
 let meDrawn = null; // what the picture top right shows now, so render() only redraws it on a change
 let viewing = null; // on the Plan tab: the workout opened from the week, or null for the week itself
-let pickerOpen = false;
 let testing = null; // ladder step key while its test field is open
 let pending = false;
 let timer = null;
@@ -192,10 +195,16 @@ const dayWord = (iso) => {
 };
 const capital = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
-const plan = () => program?.plans.find((p) => p.id === state.plan) ?? null;
-const sessions = () => sessionsOf(plan());
+// The coach's plans from the file, then his own (made in the app or saved from someone, planpages.js).
+const allPlans = () => [...(program?.plans ?? []), ...ownPlans()];
+// The plan he's on. One with no workouts in it (his own, emptied) counts as none.
+const plan = () => {
+  const p = allPlans().find((x) => x.id === state.plan);
+  return p && sessionsOfAny(p).length ? p : null;
+};
+const sessions = () => sessionsOfAny(plan());
 // Every plan's workouts, for whatever counts across plans: records, totals, activities.
-const everySession = () => program.plans.flatMap(sessionsOf);
+const everySession = () => allPlans().flatMap(sessionsOfAny);
 const current = () => currentIndex(sessions(), state.logs, today);
 // The workout on screen: one opened from the Plan tab, otherwise today's.
 const shownIndex = () => {
@@ -213,7 +222,7 @@ function render() {
     else b.removeAttribute("aria-current");
   }
   const broken = Boolean(loadError || !program || program.errors.length);
-  pagesEl.hidden = broken || !plan() || pickerOpen;
+  pagesEl.hidden = broken || !plan();
   meEl.hidden = pagesEl.hidden;
   drawMe();
   if (page === "profile") meEl.setAttribute("aria-current", "page");
@@ -230,15 +239,16 @@ function render() {
     return;
   }
   const picked = plan();
-  // With one plan in the file there's nothing to switch to, so there's no chip at all.
-  chipEl.innerHTML = !picked || program.plans.length === 1 ? ""
-    : `<button type="button" class="chip${pickerOpen ? " on" : ""}" data-act="picker" aria-expanded="${pickerOpen}" aria-label="Plan ${esc(picked.id)}. Tap to switch.">Plan ${esc(picked.id)}</button>`;
-  if (pickerOpen || !picked) main.innerHTML = pickerHtml(picked);
+  // Switching plans is on the Plan tab since 18 Nov (the header had a chip for it before).
+  chipEl.innerHTML = "";
+  // No plan chosen yet (several in the coach's file, or his own was deleted): the list of plans,
+  // and a plan's page opened from it, with no tabs until he picks one.
+  if (!picked) main.innerHTML = planPageOpen() ? planPageHtml() : `<section class="plan">${plansListHtml("Pick your plan")}</section>`;
   else if (sharing()) main.innerHTML = shareHtml();
   else if (page === "groups") main.innerHTML = groupsHtml();
   else if (page === "progress") main.innerHTML = progressHtml();
   else if (page === "profile") main.innerHTML = opened ? sessionHtml(shownIndex()) : setting ? settingHtml(setting) : profileHtml();
-  else if (page === "plan" && viewing == null) main.innerHTML = weekHtml();
+  else if (page === "plan" && viewing == null) main.innerHTML = planPageOpen() ? planPageHtml() : weekHtml();
   else main.innerHTML = sessionHtml(shownIndex());
 }
 
@@ -368,7 +378,9 @@ function weekHtml() {
   const list = sessions();
   const c = current();
   const week = list[c].week;
-  const days = list.map((s, j) => ({ s, j })).filter((x) => x.s.week === week);
+  // His own plans tell weeks apart by id (two can share a name); the coach's by title.
+  const weekOf = (s) => s.weekId ?? s.week;
+  const days = list.map((s, j) => ({ s, j })).filter((x) => weekOf(x.s) === weekOf(list[c]));
   let doneN = 0;
   const rows = days.map(({ s, j }) => {
     const log = state.logs[s.key];
@@ -389,7 +401,7 @@ function weekHtml() {
   return `
     <section class="plan">
       <header class="head">
-        <p class="eyebrow">This week</p>
+        <p class="eyebrow">${esc(planLabel(state.plan))} · this week</p>
         <h2 class="title">${esc(week)}</h2>
       </header>
       <div class="card metric">
@@ -398,6 +410,7 @@ function weekHtml() {
         <div class="segs" aria-hidden="true">${rows.map((r) => `<i class="${r.st}"></i>`).join("")}</div>
       </div>
       <ul class="card rows">${rows.map((r) => r.html).join("")}</ul>
+      ${plansListHtml()}
     </section>`;
 }
 
@@ -742,20 +755,6 @@ function settingHtml(key) {
 
 /* ---------- picking the plan ---------- */
 
-function pickerHtml(picked) {
-  return `
-    <section class="picker" role="group" aria-label="Plan">
-      <h2 class="title">${picked ? "Switch plan" : "Pick your plan"}</h2>
-      <ul class="card rows">${program.plans.map((p) => `
-        <li><button type="button" class="row" data-act="plan" data-plan="${esc(p.id)}" aria-pressed="${p.id === state.plan}">
-          <span class="st ${p.id === state.plan ? "done" : "later"}">${p.id === state.plan ? TICK : ""}</span>
-          <span class="rtext"><b>Plan ${esc(p.id)}</b>${p.title ? `<small>${esc(p.title)}</small>` : ""}</span>
-        </button></li>`).join("")}
-      </ul>
-      ${picked ? `<button type="button" class="quiet" data-act="picker">Stay on Plan ${esc(picked.id)}</button>` : ""}
-    </section>`;
-}
-
 /* ---------- typing ---------- */
 
 root.addEventListener("change", async (e) => {
@@ -792,6 +791,7 @@ root.addEventListener("input", (e) => {
     groupsInput(el);
     return;
   }
+  if (plansInput(el)) return;
   if (el.id === "note") {
     const s = sessions()[shownIndex()];
     if (!state.logs[s.key]) return;
@@ -837,6 +837,7 @@ root.addEventListener("mouseup", (e) => {
 });
 root.addEventListener("focusout", (e) => {
   if (e.target.matches(".f[data-item]") && parseNum(e.target.value) === null) e.target.value = "";
+  if (e.target.dataset?.pf) plansBlur(e.target);
   // A weight is shown the way it was understood: "62,5" becomes "62.5", junk goes.
   if (e.target.matches(".k[data-item]")) {
     const kg = parseKg(e.target.value);
@@ -845,7 +846,7 @@ root.addEventListener("focusout", (e) => {
 });
 
 root.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && e.target.id === "name") e.target.blur();
+  if (e.key === "Enter" && (e.target.id === "name" || e.target.dataset?.pf)) e.target.blur();
 });
 
 root.addEventListener("submit", (e) => {
@@ -893,6 +894,11 @@ root.addEventListener("click", (e) => {
     groupsClick(act, btn);
     return;
   }
+  if (act.startsWith("p-")) {
+    flush();
+    plansClick(act, btn);
+    return;
+  }
   // Share a saved workout or an unlocked skill: only a summary goes, never the sets or notes.
   if (act === "share") {
     const all = everySession();
@@ -935,21 +941,6 @@ root.addEventListener("click", (e) => {
     prefs.theme = btn.dataset.theme;
     savePrefs();
     applyTheme();
-    render();
-    return;
-  }
-  if (act === "picker") {
-    pickerOpen = !pickerOpen;
-    render();
-    return;
-  }
-  if (act === "plan") {
-    flush();
-    state.plan = btn.dataset.plan;
-    pickerOpen = false;
-    viewing = null;
-    page = "today";
-    persist();
     render();
     return;
   }
@@ -1054,6 +1045,7 @@ root.addEventListener("click", (e) => {
 meEl.addEventListener("click", () => {
   flush();
   stopShare();
+  closePlanPage();
   opened = null;
   setting = null;
   if (page === "profile") page = before;
@@ -1067,13 +1059,14 @@ meEl.addEventListener("click", () => {
 pagesEl.addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-page]");
   if (!btn) return;
-  if (btn.dataset.page === page && viewing == null && !sharing()) {
+  if (btn.dataset.page === page && viewing == null && !sharing() && !planPageOpen()) {
     toTop();
     if (page === "groups") enterGroups(); // tapping Groups again looks for new posts
     return;
   }
   flush();
   stopShare();
+  closePlanPage();
   page = btn.dataset.page;
   viewing = null;
   opened = null;
@@ -1095,6 +1088,24 @@ function goGroups(quiet = false) {
   toTop();
   if (!quiet) enterGroups();
 }
+// Switch to a plan (null: back to the coach's, when there's just the one). False when it can't be used.
+function usePlan(id) {
+  if (id == null) id = program?.plans.length === 1 ? program.plans[0].id : null;
+  const p = id == null ? null : allPlans().find((x) => x.id === id);
+  if (id != null && !(p && sessionsOfAny(p).length)) return false;
+  state.plan = id;
+  viewing = null;
+  persist();
+  return true;
+}
+
+initPlans({
+  esc, LEFT, RIGHT, TICK, armed, render, toTop, fmtPrescription, usePlan,
+  filePlans: () => program?.plans ?? [],
+  currentId: () => state.plan,
+  status: (t) => { statusEl.textContent = t; },
+});
+
 initGroups({
   esc, LEFT, RIGHT, TICK, MEDAL, PERSON, count, numHtml, recHtml, fmtDuration, armed, render, toTop, goGroups, avatarHtml,
   page: () => page,
@@ -1144,7 +1155,7 @@ async function start() {
     const res = await fetch(PLAN_URL);
     if (!res.ok) throw new Error(String(res.status));
     program = parsePlan(await res.text());
-    if (state.plan && !program.plans.some((p) => p.id === state.plan)) state.plan = null;
+    if (state.plan && !allPlans().some((p) => p.id === state.plan)) state.plan = null;
     // Only one plan in the file: it's his, no picking needed.
     if (!state.plan && !program.errors.length && program.plans.length === 1) {
       state.plan = program.plans[0].id;

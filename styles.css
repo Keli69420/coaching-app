@@ -502,3 +502,41 @@ ul { margin: 0; padding: 0; list-style: none; }
   .grid2 .big .num { font-size: 30px; }
   .tabs { width: calc(100% - 24px); }
 }
+
+/* ---------- plans: the list on the Plan tab, a plan's page, the builder (18 Nov) ---------- */
+.psum { margin-top: 6px; font-size: 15px; color: var(--muted); }
+.planpage .cta { margin-top: 4px; }
+.pacts { display: flex; gap: 10px; margin-top: 14px; }
+.ghostbtn.plain { background: var(--card); color: var(--ink); }
+.pweekname { margin: 28px 0 0; font-size: 22px; font-weight: 700; }
+.pdayname { margin: 16px 4px 8px; font-size: 13px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; color: var(--muted); }
+.planpage .quiet.danger { margin-top: 28px; }
+
+/* The builder. Every field is 16px or more: under that, Safari on the iPhone zooms the page on tap. */
+.build .group { margin-top: 6px; }
+.pweek { margin-top: 26px; }
+.pline { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.pline.wrap { flex-wrap: wrap; }
+.pin {
+  min-width: 0; height: 40px; padding: 0 12px; border: 0; border-radius: 12px; background: var(--fill); color: var(--ink);
+  font: 500 16px var(--font); -webkit-appearance: none; appearance: none;
+}
+.pin::placeholder { color: var(--muted); }
+.pin:focus { outline: none; box-shadow: inset 0 0 0 2px var(--lime-line); }
+.pweektitle { flex: 1 1 0; width: 0; height: 44px; background: transparent; padding: 0 4px; font-size: 22px; font-weight: 700; }
+.pday { margin-top: 12px; padding: 14px; }
+.pdaytitle { flex: 1 1 0; width: 0; background: transparent; padding: 0 4px; font-size: 18px; font-weight: 700; }
+.pitem { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+.pex { flex: 1 1 0; width: 0; font-weight: 600; }
+.pnum { flex: none; width: 48px; padding: 0; text-align: center; font: 700 17px var(--round); font-variant-numeric: tabular-nums; }
+/* The note sits beside the numbers when there's room, and drops under them on a narrow phone. */
+.pnote { flex: 1 1 120px; width: 0; }
+.punit { flex: none; height: 40px; padding: 0 12px; border-radius: 12px; background: color-mix(in srgb, var(--sky) 16%, var(--card)); color: var(--sky-ink, var(--ink)); font-size: 15px; font-weight: 600; }
+.pdel { flex: none; padding: 8px 4px 8px 8px; font-size: 14px; font-weight: 500; color: var(--muted); }
+.pdel.armed { color: var(--bad); font-weight: 600; }
+.padd { padding: 12px 4px; font-size: 16px; font-weight: 600; color: var(--pink-ink); }
+.pday > .padd { display: block; margin-top: 8px; }
+.pmore { justify-content: space-between; margin-top: 6px; padding: 0 4px; }
+.padd.wide { display: block; width: 100%; margin-top: 22px; padding: 16px; border-radius: 24px; background: var(--card); text-align: center; }
+.build .cta { margin-top: 22px; }
+

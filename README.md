@@ -18,7 +18,10 @@ Four colours, each with one meaning, so they read at a glance:
 - **Light, dark or system:** set under Profile → Settings → Appearance. System follows the phone. The rules and all colours are at the top of `styles.css`.
 
 - **Today** (opens here): **today's workout** from the coach's plan, nothing else. Like Yapp, he **starts** it (until then it's a list of what's coming and a Start button), types into one card per exercise with a disc per set and a **kg** box under it (Keli, 18 Nov; empty for bodyweight), and **saves** it. **Start also starts a clock** at the top, like recording on Strava, with **Pause / Resume** beside it (Keli, 17 Nov); Save stops it. A hit set turns lime; each exercise has a small ring that fills as sets are hit and ticks when done. Saved, it's a summary card (time, sets, new PRs with gold medals, what's next) with Edit and "Delete workout" (two taps).
-- **Plan**: **this week's** workouts, with a segmented bar (lime done, sky up next) and a list marked done, today, up next or missed. Tap one to see it or log it.
+- **Plan**: the plan he's on at the top: **this week's** workouts, with a segmented bar (lime done, sky up next) and a list marked done, today, up next or missed. Tap one to see it or log it. Below that, **Your plans** (Keli, 18 Nov): the coach's plan and every plan he made, the one he's on ticked, and **New plan**.
+  - **A plan's page:** its weeks, workouts and exercises, **Use this plan** (logs are kept, he can switch back), **Duplicate** (the coach's plan: "Copy to change it"), and for his own **Edit** and **Delete plan** (two taps).
+  - **The builder** (Edit, or New plan): name, weeks, workouts, and per exercise a name, sets × reps, a **reps / sec** switch and a note. An empty number means "as many as you can". **Copy this week** adds the same workouts as the next week. Everything saves as he types; an exercise left without a name is dropped on Done.
+  - `planpages.js` draws these, `plans.js` holds the rules; his plans are kept on the phone under `coach.plans`.
 - **Progress**: the **ladder** as three rings (for the first client: pull-ups → chest-to-bar → muscle-up) and a trend card for the step he's on; tap a ring to type a test. Below: workouts and sets this week against last week with mini bars, and one row per exercise with his record and a line of his best per week.
 - **Profile** (his picture top right, Keli 17 Nov): his photo (Keli 17 Nov: chosen under Settings → Profile), else his initial in a pink circle, or a person until he types a name; tapping it opens his name, goal, lifetime workouts, sets and PRs, with a back button to where he was and **Edit profile** (opens Settings → Profile). Under that, his **Activities**: every saved workout as a card, newest first, like Strava's (his name, "Today at 18:30", a title after the time of day such as "Evening Legs", then Time, Sets and PRs). Tapping one opens that workout, with ‹ Profile to go back. At the bottom, **Settings** (see below). `avatarHtml()` in `app.js` is the one place that draws his picture: top right, on the profile, on his activities and in Settings. The photo is cut to the middle square, shrunk to 256 px and kept as a small JPEG on the phone (`coach.avatar`, about 20 KB); `picture.js` holds the crop and the check that only such a JPEG is ever shown.
 - **Settings** (Keli 17 Nov: no tab any more, in categories at the bottom of the profile): a list like Strava's, each row showing its current value and opening its own page with ‹ Profile, which goes back to the same spot. **Profile**: photo (Choose / Change / Remove) and Name. **Appearance**: System / Light / Dark. **Account** (only with Groups on): email, Sign out, Delete account (two taps; deletes his posts and memberships, never his logs). **Data & privacy**: logs stay on this phone, and deleting the home-screen app deletes them; with Groups on it also says that what he shares goes to the server. Name and theme stay on the phone. A new setting goes into `SETTINGS` and `settingHtml()` in `app.js`.
@@ -33,13 +36,13 @@ The coach's plan is a **text file**, not code. Client three with the same goal n
 
 Open the link in Safari, then **⋯ → Share → View More → Add to Home Screen → Add** (leave "Open as Web App" on). Do this **before logging anything**, then always open it from the home-screen icon. The home-screen app and Safari keep separate data (found on Yapp).
 
-First open: on **Progress**, tap each ladder ring and type the test result. With one plan in the file it is picked for him and there's no plan chip. That's the whole setup.
+First open: on **Progress**, tap each ladder ring and type the test result. With one plan in the file it is picked for him. (With several, or after deleting the plan he was on, the app shows **Pick your plan** first.) That's the whole setup.
 
 ## Where things live
 
 - **Hosting:** GitHub Pages. Free, no renewals.
 - **The plan:** `plans/muscle-up.md`. Keli writes it in the vault at `business/client-plans/muscle-up.md`; `tools/sync_plan.sh` checks it and copies it here.
-- **What the client logs:** on his phone only (localStorage, key `coach.v1`; his name and light/dark setting under `coach.prefs`, his photo under `coach.avatar`). Logs are never sent anywhere, and this repo holds no logs and nothing about who the client is.
+- **What the client logs:** on his phone only (localStorage, key `coach.v1`; his name and light/dark setting under `coach.prefs`, his photo under `coach.avatar`, plans he made under `coach.plans`). Logs are never sent anywhere, and this repo holds no logs and nothing about who the client is.
 - **Groups:** a Supabase project (free plan, EU). Accounts, groups, posts, names and photos live there, behind the rules in `supabase/migrations/`. The sign-in is kept on the phone under `pathletics.session` (never the password). Only the project URL and the **publishable** key are in this repo (`config.js`); a secret key must never be. Keep it that way: the repo is public. Removing the home-screen app deletes his logs.
 - **Offline:** `sw.js` keeps a copy of the page and the plan, so it opens with no signal. A changed plan reaches the phone the next time it opens with signal (sometimes one open later).
 
@@ -89,7 +92,8 @@ It prints every plan as the app will read it and refuses typos with a line numbe
   - **The ladder** still counts reps, with or without added weight, but **not a set with a minus weight**: band pull-ups aren't pull-ups yet.
   - **A weight alone isn't a logged set:** only reps or seconds date a workout and let it be saved.
 - **Progress:** weeks run Monday to Sunday. A workout counts in the week of its date once it has a number in it. Exercise cards match by name and unit across days and plans, and only count logged sets (tests move the rings, not the cards). The charts start at his first logged week, at least 4 weeks and at most 8 back. `weeklyTotals()` and `exerciseStats()` in `logic.js`.
-- **Switching plan** keeps everything: logs are stored per plan and day, and the ladder counts all of them.
+- **Switching plan** keeps everything: logs are stored per plan and day, and the ladder counts all of them. It's done on the Plan tab (the header chip is gone since 18 Nov).
+- **His own plans** (`plans.js`): weeks and workouts have ids of their own and logs hang on those, so renaming one keeps its numbers; exercises are keyed by name as in the coach's file, so renaming an exercise detaches that day's numbers for it (the ladder still counts them). `toProgramPlan()` turns a plan into the shape `parsePlan()` gives, so the rest of the app can't tell them apart; `sessionsOfAny()` is the one way to get a plan's workouts. A plan with no exercise in it can't be used; if the plan he's on ends up empty, the app asks him to pick one. Limits: 30 plans, 12 weeks, 7 workouts a week, 15 exercises, 10 sets. The ladder still comes from the coach's file for every plan.
 - **Logs are keyed by plan, week title and day title,** and exercises by name. Renaming a week or day in the plan file after he has logged it hides those logs from the session (the ladder still counts them). Adding or reordering exercises is safe.
 
 ## Files
@@ -105,6 +109,8 @@ It prints every plan as the app will read it and refuses typos with a line numbe
 | Groups screens and buttons | `groups.js` |
 | Calls to the Groups server, signing in | `social.js` (plain fetch, no library) |
 | Weight on a set: reading what's typed, which set is better, how it reads | `weight.js` (tested) |
+| His own plans: their shape, limits, the builder's changes, turning one into workouts | `plans.js` (tested) |
+| The plan list, a plan's page, the builder | `planpages.js` |
 | What a post holds, cleaning what the server sends, error wording | `share-logic.js` (tested) |
 | Who may see and do what on the server | `supabase/migrations/20261117000001_groups.sql`, checked by `supabase/tests/rls.sql` |
 | Groups on or off, which server | `config.js` (empty = off) and `connect-src` in `index.html` |
@@ -114,7 +120,7 @@ It prints every plan as the app will read it and refuses typos with a line numbe
 **Before pushing:**
 
 ```bash
-node --test tests/logic.test.mjs tests/picture.test.mjs tests/share-logic.test.mjs tests/weight.test.mjs
+node --test tests/logic.test.mjs tests/picture.test.mjs tests/share-logic.test.mjs tests/weight.test.mjs tests/plans.test.mjs
 ```
 
 After changing anything in `supabase/`, also run the rules test against the local server (see Groups setup) and see `PASS`.
