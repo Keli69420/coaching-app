@@ -3,7 +3,7 @@
 // the saved copy after 1.5 s so a bad gym signal can't hang it. Proven on Yapp.
 // Only the page's own files and fonts pass through here. The client's logs never do, and neither
 // does anything to or from the Groups server: that's another address, and goes straight out.
-const CACHE = "coach-v11";
+const CACHE = "coach-v12";
 const SHELL = ["./", "./index.html", "./styles.css", "./logic.js", "./picture.js", "./weight.js", "./plans.js", "./planpages.js", "./market-logic.js", "./market.js", "./share-logic.js", "./coach-logic.js", "./coach.js", "./config.js", "./social.js", "./groups.js", "./app.js", "./plans/muscle-up.md", "./manifest.webmanifest", "./icon-180.png"];
 const TIMEOUT_MS = 1500;
 const FONT_HOSTS = ["fonts.googleapis.com", "fonts.gstatic.com"];

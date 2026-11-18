@@ -675,4 +675,257 @@ begin
   perform set_config('pathletics.checks', (current_setting('pathletics.checks')::int + checks)::text, false);
 end $$;
 
+-- Group admins (20261119000004_group_admins.sql): several admins, owner-only roles, disband, hand-over, reports.
+do $$
+declare
+  ow constant uuid := '7e570000-0000-4000-8000-0000000000a1'; -- coach who owns the groups
+  ad constant uuid := '7e570000-0000-4000-8000-0000000000a2'; -- an admin
+  a2 constant uuid := '7e570000-0000-4000-8000-0000000000a3'; -- another admin
+  m1 constant uuid := '7e570000-0000-4000-8000-0000000000a4'; -- a member who joined first
+  m2 constant uuid := '7e570000-0000-4000-8000-0000000000a5'; -- another member
+  st constant uuid := '7e570000-0000-4000-8000-0000000000a6'; -- outsider who is a student elsewhere too
+  g uuid;  -- the main group
+  gd uuid; -- a group to disband
+  gh uuid; -- a group for the hand-over
+  ge uuid; -- another coaching group st is in
+  pm uuid; -- m1's post
+  pl uuid; -- a plan
+  k text;
+  n int;
+  checks int := 0;
+begin
+  insert into auth.users (id, email, aud, role)
+  select u, 'g' || right(u::text, 2) || '@test.invalid', 'authenticated', 'authenticated' from unnest(array[ow, ad, a2, m1, m2, st]) u;
+  insert into public.profiles (id, name, tier) values (ow, 'Owen', 'coach'), (ad, 'Adam', 'coach'), (a2, 'Ada', 'free'),
+    (m1, 'Mo', 'free'), (m2, 'Max', 'free'), (st, 'Sid', 'free');
+  insert into public.groups (name, kind) values ('GA', 'coaching') returning id into g;
+  insert into public.groups (name, kind) values ('GD', 'coaching') returning id into gd;
+  insert into public.groups (name, kind) values ('GH', 'friends') returning id into gh;
+  insert into public.groups (name, kind) values ('GE', 'coaching') returning id into ge;
+  insert into public.group_members (group_id, user_id, role, joined_at) values
+    (g, ow, 'owner', now() - interval '10 days'), (g, ad, 'admin', now() - interval '5 days'),
+    (g, a2, 'admin', now() - interval '4 days'), (g, m1, 'member', now() - interval '6 days'),
+    (g, m2, 'member', now() - interval '3 days'),
+    (gd, ow, 'owner', now() - interval '10 days'), (gd, ad, 'admin', now() - interval '5 days'),
+    (gd, st, 'member', now() - interval '4 days'),
+    (ge, m2, 'owner', now() - interval '10 days'), (ge, st, 'member', now() - interval '4 days'),
+    (gh, ow, 'owner', now() - interval '10 days'), (gh, m1, 'member', now() - interval '9 days'),
+    (gh, ad, 'admin', now() - interval '2 days'), (gh, a2, 'admin', now() - interval '1 day');
+  update public.group_members set share_progress = true where group_id = g and user_id = m1;
+  insert into public.posts (author, kind, audience, group_id, snapshot) values (m1, 'activity', 'group', g, '{}') returning id into pm;
+  insert into public.plans (author, title, summary, body) values (ow, 'Plan', 's', '{"days":[]}') returning id into pl;
+
+  -- The admin: rename, invite, remove a member, delete a member's post.
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims', json_build_object('sub', ad, 'role', 'authenticated')::text, true);
+  assert private.is_admin(g) and not private.is_owner(g), 'the admin is not an admin';
+  update public.groups set name = 'GA2' where id = g;
+  get diagnostics n = row_count; assert n = 1, 'the admin could not rename the group';
+  k := public.group_invite(g);
+  assert k ~ '^[A-HJKMNP-Z2-9]{8}$', 'the admin got no invite code';
+  delete from public.posts where id = pm;
+  get diagnostics n = row_count; assert n = 1, 'the admin could not delete a member''s post';
+  checks := checks + 3;
+
+  -- He can't remove the owner, another admin, or set roles, or disband.
+  delete from public.group_members where group_id = g and user_id = ow;
+  get diagnostics n = row_count; assert n = 0, 'the admin removed the owner';
+  delete from public.group_members where group_id = g and user_id = a2;
+  get diagnostics n = row_count; assert n = 0, 'an admin removed another admin';
+  begin perform public.set_member_role(g, m1, 'admin'); assert false, 'an admin set a role';
+  exception when insufficient_privilege then checks := checks + 1; end;
+  begin perform public.disband_group(g); assert false, 'an admin disbanded the group';
+  exception when insufficient_privilege then checks := checks + 1; end;
+  select count(*) into n from public.groups where id = g; assert n = 1, 'the group went after an admin tried to disband it';
+  begin update public.group_members set role = 'owner' where group_id = g and user_id = ad;
+    assert false, 'an admin made himself owner';
+  exception when insufficient_privilege then checks := checks + 1; end;
+  -- Coaching stays with the owner (he is a coach, but not the owner).
+  begin perform public.assign_plan(g, m1, pl); assert false, 'an admin assigned a plan';
+  exception when insufficient_privilege then checks := checks + 1; end;
+  select count(*) into n from public.group_progress_sharing(g); assert n = 0, 'an admin saw who shares progress';
+  checks := checks + 4;
+  -- He removes a member.
+  delete from public.group_members where group_id = g and user_id = m2;
+  get diagnostics n = row_count; assert n = 1, 'the admin could not remove a member';
+  checks := checks + 1;
+  -- An admin can leave, and he can share his own progress as a student.
+  perform public.set_progress_sharing(g, true);
+  assert (select share_progress from public.my_progress_sharing() where group_id = g), 'an admin could not share his progress';
+  perform public.set_progress_sharing(g, false);
+  checks := checks + 1;
+  reset role;
+  insert into public.group_members (group_id, user_id, joined_at) values (g, m2, now() - interval '3 days');
+
+  -- A member can't rename, remove, delete another's post, set roles, or get the invite.
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims', json_build_object('sub', m1, 'role', 'authenticated')::text, true);
+  update public.groups set name = 'Hacked' where id = g;
+  get diagnostics n = row_count; assert n = 0, 'a member renamed the group';
+  delete from public.group_members where group_id = g and user_id = m2;
+  get diagnostics n = row_count; assert n = 0, 'a member removed another member';
+  begin perform public.group_invite(g); assert false, 'a member got the invite code';
+  exception when insufficient_privilege then checks := checks + 1; end;
+  begin perform public.set_member_role(g, m2, 'admin'); assert false, 'a member set a role';
+  exception when insufficient_privilege then checks := checks + 1; end;
+  begin perform public.disband_group(g); assert false, 'a member disbanded the group';
+  exception when insufficient_privilege then checks := checks + 1; end;
+  reset role;
+  insert into public.posts (author, kind, audience, group_id, snapshot) values (m2, 'activity', 'group', g, '{}') returning id into pm;
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims', json_build_object('sub', m1, 'role', 'authenticated')::text, true);
+  delete from public.posts where id = pm;
+  get diagnostics n = row_count; assert n = 0, 'a member deleted another member''s post';
+  checks := checks + 5;
+
+  -- The owner: sets an admin and back, can't set on himself or a non-member, removes an admin.
+  perform set_config('request.jwt.claims', json_build_object('sub', ow, 'role', 'authenticated')::text, true);
+  perform public.set_member_role(g, m1, 'admin');
+  assert (select role from public.group_members where group_id = g and user_id = m1) = 'admin', 'the owner could not make an admin';
+  perform public.set_member_role(g, m1, 'member');
+  assert (select role from public.group_members where group_id = g and user_id = m1) = 'member', 'the owner could not unmake an admin';
+  begin perform public.set_member_role(g, ow, 'admin'); assert false, 'the owner demoted himself';
+  exception when insufficient_privilege then checks := checks + 1; end;
+  begin perform public.set_member_role(g, st, 'admin'); assert false, 'a role was set on a non-member';
+  exception when others then
+    assert sqlstate = 'P0002', 'wrong refusal: ' || sqlerrm; checks := checks + 1; end;
+  begin perform public.set_member_role(g, m1, 'owner'); assert false, 'a role of owner was set';
+  exception when invalid_parameter_value then checks := checks + 1; end;
+  begin perform public.set_member_role(g, m1, null); assert false, 'a null role was set';
+  exception when invalid_parameter_value then checks := checks + 1; end;
+  delete from public.group_members where group_id = g and user_id = a2;
+  get diagnostics n = row_count; assert n = 1, 'the owner could not remove an admin';
+  reset role;
+  checks := checks + 4;
+
+  -- Reports: a member can, a non-member can't, twice is fine, anon can't.
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims', json_build_object('sub', m1, 'role', 'authenticated')::text, true);
+  perform public.report_group(g, '  spam  ');
+  perform public.report_group(g, 'again');
+  reset role;
+  select count(*) into n from private.group_reports where group_id = g; assert n = 1, 'a report was not stored once';
+  assert (select reason from private.group_reports where group_id = g) = 'spam', 'the first report was not kept';
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims', json_build_object('sub', st, 'role', 'authenticated')::text, true);
+  begin perform public.report_group(g, 'x'); assert false, 'a non-member reported a group';
+  exception when others then
+    assert sqlstate = 'P0002', 'wrong refusal: ' || sqlerrm; checks := checks + 1; end;
+  begin perform 1 from private.group_reports; assert false, 'read the group reports';
+  exception when insufficient_privilege then checks := checks + 1; end;
+  perform set_config('role', 'anon', true);
+  begin perform public.report_group(g, 'x'); assert false, 'anon reported a group';
+  exception when insufficient_privilege then checks := checks + 1; end;
+  begin perform public.set_member_role(g, m1, 'admin'); assert false, 'anon set a role';
+  exception when insufficient_privilege then checks := checks + 1; end;
+  begin perform public.disband_group(g); assert false, 'anon disbanded a group';
+  exception when insufficient_privilege then checks := checks + 1; end;
+  reset role;
+  checks := checks + 2;
+
+  -- A demoted or removed admin loses the invite codes he fetched.
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims', json_build_object('sub', ad, 'role', 'authenticated')::text, true);
+  k := public.group_invite(g);
+  perform set_config('request.jwt.claims', json_build_object('sub', ow, 'role', 'authenticated')::text, true);
+  perform public.set_member_role(g, ad, 'member');
+  reset role;
+  assert not exists (select 1 from private.invites where group_id = g), 'a demoted admin''s code is still open';
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims', json_build_object('sub', st, 'role', 'authenticated')::text, true);
+  assert public.join_with_code(k, null) ->> 'error' = 'bad_code', 'a demoted admin''s code still worked';
+  perform set_config('request.jwt.claims', json_build_object('sub', ow, 'role', 'authenticated')::text, true);
+  perform public.set_member_role(g, ad, 'admin');
+  perform set_config('request.jwt.claims', json_build_object('sub', ad, 'role', 'authenticated')::text, true);
+  k := public.group_invite(g);
+  perform set_config('request.jwt.claims', json_build_object('sub', ow, 'role', 'authenticated')::text, true);
+  delete from public.group_members where group_id = g and user_id = ad;
+  get diagnostics n = row_count; assert n = 1, 'the owner could not remove the admin';
+  reset role;
+  assert not exists (select 1 from private.invites where group_id = g), 'a removed admin''s code is still open';
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims', json_build_object('sub', st, 'role', 'authenticated')::text, true);
+  assert public.join_with_code(k, null) ->> 'error' = 'bad_code', 'a removed admin''s code still worked';
+  -- The owner gets a fresh code, and an admin leaving on his own does not close it.
+  perform set_config('request.jwt.claims', json_build_object('sub', ow, 'role', 'authenticated')::text, true);
+  k := public.group_invite(g);
+  reset role;
+  insert into public.group_members (group_id, user_id, role) values (g, ad, 'admin');
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims', json_build_object('sub', ad, 'role', 'authenticated')::text, true);
+  delete from public.group_members where group_id = g and user_id = ad;
+  reset role;
+  assert exists (select 1 from private.invites where group_id = g and code = k), 'an admin leaving closed the code';
+  checks := checks + 6;
+
+  -- Disband: refused for an admin and a member, works for the owner and takes everything with it.
+  insert into public.posts (author, kind, audience, group_id, snapshot) values (st, 'activity', 'group', gd, '{}');
+  update public.group_members set share_progress = true where group_id = gd and user_id = st;
+  insert into public.progress (user_id, body) values (st, '{"prs":[]}');
+  insert into public.assignments (group_id, coach, student, plan_id) values (gd, ow, st, pl);
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims', json_build_object('sub', ad, 'role', 'authenticated')::text, true);
+  begin perform public.disband_group(gd); assert false, 'an admin disbanded a group';
+  exception when insufficient_privilege then checks := checks + 1; end;
+  perform set_config('request.jwt.claims', json_build_object('sub', st, 'role', 'authenticated')::text, true);
+  begin perform public.disband_group(gd); assert false, 'a member disbanded a group';
+  exception when insufficient_privilege then checks := checks + 1; end;
+  perform public.report_group(gd, 'bye');
+  perform set_config('request.jwt.claims', json_build_object('sub', ow, 'role', 'authenticated')::text, true);
+  perform public.disband_group(gd);
+  reset role;
+  assert not exists (select 1 from public.groups where id = gd), 'the group is still there';
+  assert not exists (select 1 from public.group_members where group_id = gd), 'members are still there';
+  assert not exists (select 1 from public.posts where group_id = gd), 'posts are still there';
+  assert not exists (select 1 from public.assignments where group_id = gd), 'assignments are still there';
+  assert not exists (select 1 from public.progress where user_id = st), 'orphaned progress is still there';
+  assert exists (select 1 from private.group_reports where group_id is null and group_name = 'GD' and reporter = st),
+    'a report did not survive the group being disbanded';
+  checks := checks + 6;
+  -- Progress shared with another coaching group survives a disband.
+  update public.group_members set share_progress = true where group_id = ge and user_id = st;
+  insert into public.progress (user_id, body) values (st, '{"prs":[]}');
+  insert into public.groups (name, kind) values ('GD2', 'coaching') returning id into gd;
+  insert into public.group_members (group_id, user_id, role) values (gd, ow, 'owner'), (gd, st, 'member');
+  update public.group_members set share_progress = true where group_id = gd and user_id = st;
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims', json_build_object('sub', ow, 'role', 'authenticated')::text, true);
+  perform public.disband_group(gd);
+  reset role;
+  assert exists (select 1 from public.progress where user_id = st), 'progress shared elsewhere went with a disband';
+  checks := checks + 1;
+
+  -- The owner leaves: the longest-standing ADMIN takes over, even though a member joined earlier.
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims', json_build_object('sub', ow, 'role', 'authenticated')::text, true);
+  delete from public.group_members where group_id = gh and user_id = ow;
+  get diagnostics n = row_count; assert n = 1, 'the owner could not leave';
+  reset role;
+  assert (select role from public.group_members where group_id = gh and user_id = ad) = 'owner', 'the longest-standing admin did not take over';
+  assert (select role from public.group_members where group_id = gh and user_id = a2) = 'admin', 'the other admin changed role';
+  assert (select role from public.group_members where group_id = gh and user_id = m1) = 'member', 'the member changed role';
+  checks := checks + 3;
+  -- No admins left: the longest-standing member takes over.
+  delete from public.group_members where group_id = gh and user_id in (ad, a2);
+  assert (select role from public.group_members where group_id = gh and user_id = m1) = 'owner', 'the member did not take over';
+  checks := checks + 1;
+  -- A new owner resets consent (coaching group, owner leaves, admin takes over).
+  update public.group_members set share_progress = true where group_id = ge and user_id = st;
+  insert into public.group_members (group_id, user_id, role, joined_at) values (ge, ad, 'admin', now() - interval '1 day')
+    on conflict do nothing;
+  delete from public.group_members where group_id = ge and user_id = m2;
+  assert (select role from public.group_members where group_id = ge and user_id = ad) = 'owner', 'the admin did not take over ge';
+  assert not exists (select 1 from public.group_members where group_id = ge and share_progress), 'consent survived a hand-over to an admin';
+  assert (select kind from public.groups where id = ge) = 'coaching', 'a coach admin who took over lost the coaching group';
+  checks := checks + 3;
+
+  -- Clean up.
+  delete from auth.users where id in (ow, ad, a2, m1, m2, st);
+  delete from public.groups where id in (g, gd, gh, ge);
+  assert not exists (select 1 from public.profiles where id in (ow, ad, a2, m1, m2, st)), 'admin test people left behind';
+  assert not exists (select 1 from private.group_reports), 'group reports left behind';
+
+  perform set_config('pathletics.checks', (current_setting('pathletics.checks')::int + checks)::text, false);
+end $$;
+
 select 'PASS: ' || current_setting('pathletics.checks') || ' checks' as result;

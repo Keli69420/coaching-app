@@ -571,3 +571,11 @@ button.gname { background: none; border: 0; padding: 0; color: inherit; font: in
 .wkitems li { display: flex; flex-direction: column; padding: 6px 0; }
 .wkitems b { font-size: 16px; font-weight: 600; }
 .wkitems small { font-size: 15px; color: var(--muted); }
+/* Group settings: the gear sits at the top right of the group header. */
+.ghead { position: relative; padding-right: 52px; }
+.gear { position: absolute; top: 2px; right: 0; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 999px; background: var(--card); color: var(--ink); }
+.gear svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.gear:active { filter: brightness(.95); }
+.mset .gact + .gact { margin-left: 4px; }
+.mset .gact:first-of-type { margin-left: auto; }
+.gleave { margin-top: 14px; text-align: center; }

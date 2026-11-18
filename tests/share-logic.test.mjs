@@ -60,10 +60,12 @@ test("a post from the server is read field by field", () => {
 });
 
 test("groups and members", () => {
-  assert.deepEqual(cleanGroup({ role: "owner", group: { id: ID, name: " Bar crew " } }), { id: ID, name: "Bar crew", owner: true });
-  assert.deepEqual(cleanGroup({ role: "member", group: { id: ID, name: "" } }), { id: ID, name: "Group", owner: false });
+  assert.deepEqual(cleanGroup({ role: "owner", group: { id: ID, name: " Bar crew " } }), { id: ID, name: "Bar crew", owner: true, admin: false });
+  assert.deepEqual(cleanGroup({ role: "member", group: { id: ID, name: "" } }), { id: ID, name: "Group", owner: false, admin: false });
   assert.equal(cleanGroup({ role: "owner", group: null }), null);
-  assert.deepEqual(cleanMember({ role: "member", user: { id: ID2, name: "Ben" } }), { id: ID2, name: "Ben", owner: false });
+  assert.deepEqual(cleanMember({ role: "member", user: { id: ID2, name: "Ben" } }), { id: ID2, name: "Ben", owner: false, admin: false });
+  assert.deepEqual(cleanMember({ role: "admin", user: { id: ID2, name: "Ben" } }), { id: ID2, name: "Ben", owner: false, admin: true });
+  assert.equal(cleanGroup({ role: "admin", group: { id: ID, name: "X" } }).admin, true);
   assert.equal(cleanMember({ user: { id: 1 } }), null);
 });
 

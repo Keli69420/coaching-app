@@ -81,18 +81,18 @@ export function cleanPost(raw) {
   };
 }
 
-// A row of group_members with its group: { role, group: { id, name } }.
+// Role is "owner", "admin" or "member". A row of group_members with its group: { role, group: { id, name } }.
 export function cleanGroup(raw) {
   const g = raw?.group;
   if (!isObj(g) || !UUID.test(g.id)) return null;
-  return { id: g.id, name: str(g.name, NAME_MAX).trim() || "Group", owner: raw.role === "owner" };
+  return { id: g.id, name: str(g.name, NAME_MAX).trim() || "Group", owner: raw.role === "owner", admin: raw.role === "admin" };
 }
 
 // A row of group_members with its person: { role, user: { id, name } }.
 export function cleanMember(raw) {
   const u = raw?.user;
   if (!isObj(u) || !UUID.test(u.id)) return null;
-  return { id: u.id, name: str(u.name, NAME_MAX).trim() || "Member", owner: raw.role === "owner" };
+  return { id: u.id, name: str(u.name, NAME_MAX).trim() || "Member", owner: raw.role === "owner", admin: raw.role === "admin" };
 }
 
 /* ---------- invite codes ---------- */

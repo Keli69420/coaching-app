@@ -65,3 +65,17 @@ do $$ declare who uuid := 'PROFILE-ID'; begin
   update public.groups set kind = 'friends'
   where id in (select group_id from public.group_members where user_id = who and role = 'owner');
 end $$;
+
+-- 13. Reported groups, newest first, with how many people are in them and who owns them.
+--     A disbanded group shows the name it had when it was reported, marked (disbanded).
+select r.created_at as reported, r.reason,
+  coalesce(g.name, r.group_name || ' (disbanded)') as group_name,
+  rp.name as reporter,
+  (select count(*) from public.group_members m where m.group_id = g.id) as members,
+  o.name as owner, r.group_id
+from private.group_reports r
+left join public.groups g on g.id = r.group_id
+join public.profiles rp on rp.id = r.reporter
+left join public.group_members om on om.group_id = g.id and om.role = 'owner'
+left join public.profiles o on o.id = om.user_id
+order by r.created_at desc;

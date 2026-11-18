@@ -45,6 +45,7 @@ function bodyHtml() {
   if (!me()) return welcomeHtml();
   if (v === "code") return codeHtml();
   if (v === "group" && G.group) return groupHtml();
+  if (v === "gsettings" && G.group) return settingsHtml();
   if (v === "student" && G.student) return studentPageHtml();
   if (v === "newgroup") return newGroupHtml();
   if (v === "joingroup") return joinGroupHtml();
@@ -120,7 +121,7 @@ function homeHtml() {
   const rows = G.groups == null ? `<li class="gload">Loading…</li>` : G.groups.map((g) => `
     <li><button type="button" class="row" data-act="g-open" data-id="${g.id}">
       <span class="gicon">${GROUP_ICON}</span>
-      <span class="rtext"><b>${esc(g.name)}</b><small>${g.owner ? "Yours" : "Member"}</small></span>${ctx.RIGHT}
+      <span class="rtext"><b>${esc(g.name)}</b><small>${g.owner ? "Yours" : g.admin ? "Admin" : "Member"}</small></span>${ctx.RIGHT}
     </button></li>`).join("");
   return `
     ${head("Groups")}
@@ -139,14 +140,67 @@ function groupHtml() {
   return `
     ${back("g-home", "Groups")}
     ${g.kind === "coaching" ? `<p class="eyebrow">Coaching group</p>` : ""}
-    ${head(g.name, n ? ctx.count(n, "member", "members") : "")}
+    <div class="ghead">${head(g.name, n ? ctx.count(n, "member", "members") : "")}<button type="button" class="gear" data-act="g-settings" aria-label="Group settings">${GEAR}</button></div>
     ${noteLine()}${errBox()}
-    ${g.owner ? inviteHtml(g) : consentHtml(g)}
+    ${g.owner || g.admin ? inviteHtml(g) : ""}
+    ${g.owner ? "" : consentHtml(g)}
     <h2 class="sect">Posts</h2>
     ${feedHtml(g.posts, "Nothing here yet. Share a saved workout, or a skill from Progress.")}
     <h2 class="sect">Members</h2>
     ${g.members == null ? `<p class="empty">Loading…</p>` : `<ul class="card rows">${g.members.map(memberHtml).join("")}</ul>`}
-    <button type="button" class="quiet" data-act="g-leave">Leave group</button>`;
+`;
+}
+
+// A gear in the style of the other icons: a ring with eight teeth.
+const GEAR = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8"/><circle cx="12" cy="12" r="6.5"/></svg>`;
+
+const ROLE = (m) => (m.owner ? "Owner" : m.admin ? "Admin" : "");
+
+// The settings page: staff (owner and admins) manage the group, everyone can leave or report.
+function settingsHtml() {
+  const g = G.group;
+  const staff = g.owner || g.admin;
+  const members = g.members == null ? `<p class="empty">Loading…</p>` : `<ul class="card rows">${g.members.map(settingsMemberHtml).join("")}</ul>`;
+  return `
+    ${back("g-settingsback", g.name)}
+    ${head("Group settings", g.name)}
+    ${noteLine()}${errBox()}
+    ${staff ? `
+      <h2 class="sect">Name</h2>
+      <form class="gform" data-form="rename" novalidate>
+        <div class="card group">${field("Name", `name="name" type="text" maxlength="${NAME_MAX}" autocomplete="off" autocapitalize="words" value="${esc(g.name)}"`)}</div>
+        ${submit("Save")}
+      </form>
+      <h2 class="sect">Members</h2>
+      ${members}` : ""}
+    ${g.owner ? `
+      <button type="button" class="quiet danger" data-act="g-disband">Disband group</button>
+      <p class="foot">Deletes the group and all its posts for everyone.</p>` : ""}
+    ${g.owner ? `<p class="foot gleave">An admin takes over, or the longest member.</p>` : ""}
+    <button type="button" class="quiet danger" data-act="g-leave">Leave group</button>
+    <h2 class="sect">Report group</h2>
+    <form class="gform" data-form="report" novalidate>
+      <div class="card group">${field("Reason", `name="reason" type="text" maxlength="280" autocomplete="off" placeholder="Optional"`)}</div>
+      ${submit("Send")}
+    </form>
+    <p class="gnote" id="gdone" role="status"></p>`;
+}
+
+// One person in settings: their role, and what the viewer may do with them.
+function settingsMemberHtml(m) {
+  const g = G.group;
+  const you = m.id === me()?.id;
+  const makeAdmin = g.owner && !you && !m.owner
+    ? `<button type="button" class="gact" data-act="g-role" data-id="${m.id}" data-role="${m.admin ? "member" : "admin"}">${m.admin ? "Remove admin" : "Make admin"}</button>` : "";
+  // The owner removes anyone but himself; admins remove plain members only.
+  const canRemove = !you && !m.owner && (g.owner || (g.admin && !m.admin));
+  return `
+    <li class="mrow mset">
+      <span class="avatar sm">${avatarOf(m)}</span>
+      <span class="rtext"><b>${esc(m.name)}${you ? " (you)" : ""}</b><small>${ROLE(m) || "Member"}</small></span>
+      ${makeAdmin}
+      ${canRemove ? `<button type="button" class="gact" data-act="g-remove" data-id="${m.id}">Remove</button>` : ""}
+    </li>`;
 }
 
 function inviteHtml(g) {
@@ -166,14 +220,13 @@ function memberHtml(m) {
   // A coach sees who shares progress, and opens the ones who do.
   const watch = G.group.owner && G.group.kind === "coaching" && !you && !m.owner;
   const shares = watch && G.group.shares?.has(m.id);
-  const sub = [m.owner ? "Owner" : "", watch ? (shares ? "Sharing progress" : "Not sharing") : "", co?.sub || ""].filter(Boolean).join(" · ");
+  const sub = [ROLE(m), watch ? (shares ? "Sharing progress" : "Not sharing") : "", co?.sub || ""].filter(Boolean).join(" · ");
   const text = `<b>${esc(m.name)}${you ? " (you)" : ""}</b>${sub ? `<small>${sub}</small>` : ""}`;
   return `
     <li class="mrow">
       <span class="avatar sm">${avatarOf(m)}</span>
       ${shares ? `<button type="button" class="rtext gname" data-act="g-student" data-id="${m.id}">${text}</button>` : `<span class="rtext">${text}</span>`}
       ${co ? co.button : ""}
-      ${G.group.owner && !you ? `<button type="button" class="gact" data-act="g-remove" data-id="${m.id}">Remove</button>` : ""}
     </li>${co?.below || ""}`;
 }
 
@@ -320,7 +373,7 @@ function postHtml(p, preview = false) {
   let action = "";
   if (!preview) {
     const mine = p.author?.id === me()?.id;
-    const owner = G.view === "group" && G.group?.owner;
+    const owner = G.view === "group" && (G.group?.owner || G.group?.admin);
     action = mine ? `<button type="button" class="gact" data-act="g-delpost" data-id="${p.id}" data-confirm="Tap again to delete">Delete</button>`
       : owner ? `<button type="button" class="gact" data-act="g-delpost" data-id="${p.id}" data-confirm="Tap again to remove">Remove</button>`
       : `<button type="button" class="gact" data-act="g-report" data-id="${p.id}">Report</button>`;
@@ -511,12 +564,13 @@ async function load() {
   }
 }
 
-async function openGroup(g) {
+// view: which page to draw ("group", or "gsettings" when only the members need a refresh).
+async function openGroup(g, view = "group") {
   if (!g) return;
-  G.view = "group";
-  G.group = { id: g.id, name: g.name, kind: g.kind || "friends", owner: g.owner, posts: null, members: null, code: G.group?.id === g.id ? G.group.code : null };
+  G.view = view;
+  G.group = { id: g.id, name: g.name, kind: g.kind || "friends", owner: g.owner, admin: !!g.admin, posts: null, members: null, code: G.group?.id === g.id ? G.group.code : null };
   redraw();
-  ctx.toTop();
+  if (view === "group") ctx.toTop();
   const n = ++seqGroup;
   try {
     const [posts, mem, info, flags] = await Promise.all([
@@ -535,6 +589,7 @@ async function openGroup(g) {
       return;
     }
     const owner = members.some((m) => m.id === me().id && m.owner);
+    const admin = members.some((m) => m.id === me().id && m.admin);
     const coaching = info?.[0]?.kind === "coaching";
     // Only the coach who owns a coaching group is told who shares (anyone else gets nothing).
     const sharers = owner && coaching ? await rpc("group_progress_sharing", { p_group: g.id }) : [];
@@ -545,6 +600,7 @@ async function openGroup(g) {
       posts: (posts || []).map(cleanPost).filter(Boolean),
       members,
       owner,
+      admin,
       shares: new Set((Array.isArray(sharers) ? sharers : []).map((r) => r?.user_id)),
       myShare: sharingFlags(flags).get(g.id) === true,
     });
@@ -618,9 +674,13 @@ export async function groupsSubmit(form) {
     : which === "code" ? checkJoin({ code: f.code, name: f.name })
     : which === "joingroup" ? checkJoin({ code: f.code })
     : which === "signin" ? (String(f.email).trim() && f.password ? "" : "Fill in your email and password.")
-    : which === "newgroup" ? (String(f.name).trim() ? "" : "Give the group a name.") : "";
+    : which === "newgroup" ? (String(f.name).trim() ? "" : "Give the group a name.")
+    : which === "rename" ? (String(f.name).trim().length >= 1 && String(f.name).trim().length <= NAME_MAX ? "" : `Use 1 to ${NAME_MAX} characters.`)
+    : which === "report" ? (String(f.reason || "").length <= 280 ? "" : "Keep it under 280 characters.") : "";
   if (problem) { say(problem); return; }
   say("");
+  const sent = document.getElementById("gdone");
+  if (sent) sent.textContent = "";
   const label = btn.textContent;
   btn.disabled = true;
   btn.textContent = "One moment…";
@@ -646,6 +706,27 @@ export async function groupsSubmit(form) {
       G.note = "Group made. Invite your friends with its code.";
       await openGroup({ id, name, owner: true });
       load();
+    } else if (which === "rename") {
+      const name = String(f.name).trim();
+      const rows = await rest(`groups?id=eq.${G.group.id}`, { method: "PATCH", headers: { Prefer: "return=representation" }, body: { name } });
+      if (!Array.isArray(rows) || !rows.length) { // no row matched: he is no longer allowed (demoted meanwhile)
+        say("You can't change this group's name any more.");
+        done();
+        openGroup(G.group, "gsettings"); // his role may have changed: draw the page again
+        return;
+      }
+      G.group.name = name;
+      const mine = G.groups?.find((x) => x.id === G.group.id);
+      if (mine) mine.name = name;
+      G.note = "Saved.";
+      done();
+      redraw();
+    } else if (which === "report") {
+      await rpc("report_group", { p_group: G.group.id, p_reason: String(f.reason || "").trim().slice(0, 280) });
+      form.reset();
+      const ok = document.getElementById("gdone");
+      if (ok) ok.textContent = "Thanks. We'll look at it.";
+      done();
     } else if (which === "joingroup") {
       const r = await rpc("join_with_code", { p_code: cleanCode(f.code) });
       if (r?.error) throw new NetError("bad", joinError(r.error));
@@ -691,7 +772,9 @@ export async function groupsClick(act, btn) {
   if (act === "g-joingroup") return to("joingroup");
   if (act === "g-home") { to("home"); G.group = null; load(); return; }
   if (act === "g-open") { G.note = ""; openGroup(G.groups.find((g) => g.id === id)); return; }
-  if (act === "g-retry") { G.error = ""; if (G.view === "group" && G.group) openGroup(G.group); else load(); return; }
+  if (act === "g-retry") { G.error = ""; if ((G.view === "group" || G.view === "gsettings") && G.group) openGroup(G.group, G.view); else load(); return; }
+  if (act === "g-settings") return to("gsettings");
+  if (act === "g-settingsback") return to("group");
   if (act === "g-asg" || act === "g-asgpick") { coachGroupClick(act, btn); return; }
   if (act === "g-student") {
     const m = G.group?.members?.find((x) => x.id === id);
@@ -761,7 +844,20 @@ export async function groupsClick(act, btn) {
     } else if (act === "g-remove") {
       if (!ctx.armed(btn, "Tap again")) return;
       await rest(`group_members?group_id=eq.${G.group.id}&user_id=eq.${id}`, { method: "DELETE" });
-      openGroup(G.group);
+      openGroup(G.group, "gsettings");
+    } else if (act === "g-role") {
+      btn.disabled = true;
+      await rpc("set_member_role", { p_group: G.group.id, p_user: id, p_role: btn.dataset.role === "admin" ? "admin" : "member" });
+      openGroup(G.group, "gsettings");
+    } else if (act === "g-disband") {
+      if (!ctx.armed(btn, "Tap again to disband. All posts in it are deleted for everyone.")) return;
+      btn.disabled = true;
+      const name = G.group.name;
+      await rpc("disband_group", { p_group: G.group.id });
+      G.group = null;
+      to("home");
+      G.note = `${name} was disbanded.`;
+      load();
     } else if (act === "g-leave") {
       if (!ctx.armed(btn, "Tap again to leave")) return;
       const name = G.group.name;
