@@ -312,9 +312,19 @@ export const accountValue = () => (me() ? "Signed in" : "Not signed in");
 const REQ_KEY = "pathletics.coachRequested";
 const requested = () => { try { return localStorage.getItem(REQ_KEY) === "1"; } catch { return false; } };
 
+// While he's waiting, opening Account asks the server whether he's been approved (at most every 10 s).
+let tierAsked = 0;
+function checkTier() {
+  const u = me();
+  if (!u || Date.now() - tierAsked < 10000) return;
+  tierAsked = Date.now();
+  rest(`profiles?select=tier&id=eq.${u.id}`).then(([p]) => { if (p) ctx.setTier?.(cleanTier(p.tier)); }).catch(() => {});
+}
+
 function coachHtml() {
   if ((ctx.myTier?.() ?? "free") === "coach") return `<div class="card group"><div class="grow"><span>Coach</span></div></div>`;
   const asked = requested();
+  if (asked) setTimeout(checkTier, 0);
   return `
     <div class="card group"><div class="grow"><span>Coach</span><span class="val">${asked ? "Requested" : "Free"}</span></div></div>
     <p class="foot">Coaches build unlimited plans and run coaching groups of up to 50.</p>
