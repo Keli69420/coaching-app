@@ -240,6 +240,17 @@ ul { margin: 0; padding: 0; list-style: none; }
 .set .f:focus { outline: none; box-shadow: inset 0 0 0 2.5px var(--lime-line); }
 .set.hit .f { background: var(--lime); color: var(--on-lime); }
 .set.hit .f:focus { box-shadow: inset 0 0 0 2.5px var(--on-lime); }
+/* The weight under each set (18 Nov): a small pill, empty for bodyweight. */
+.sets .set { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.set .k {
+  display: block; width: 56px; height: 26px; padding: 0; border: 0; border-radius: 13px;
+  background: transparent; box-shadow: inset 0 0 0 1.5px var(--fill); color: var(--ink);
+  font-family: var(--round); font-variant-numeric: tabular-nums; font-size: 13px; font-weight: 700; text-align: center;
+  -webkit-appearance: none; appearance: none;
+}
+.set .k::placeholder { font-weight: 600; color: var(--muted); }
+.set .k:focus { outline: none; box-shadow: inset 0 0 0 2px var(--lime-line); }
+.times { margin: 0 .3em; font-weight: 600; color: var(--muted); }
 .f::selection { background: color-mix(in srgb, var(--lime-line) 35%, transparent); color: var(--ink); }
 .set.hit .f::selection { background: rgba(0, 0, 0, .2); color: var(--on-lime); }
 
@@ -484,6 +495,7 @@ ul { margin: 0; padding: 0; list-style: none; }
   .dial { width: 68px; height: 68px; }
   .sval .num { font-size: 21px; }
   .set .f { width: 50px; height: 50px; }
+  .set .k { width: 50px; }
   .grid2 { gap: 8px; }
   .metric { padding: 16px 14px; }
   .grid2 .big .num { font-size: 30px; }

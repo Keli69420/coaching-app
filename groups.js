@@ -217,7 +217,7 @@ function postHtml(p, preview = false) {
     body = `
       <span class="acttitle">${esc(s.title)}</span>
       <span class="actstats">${s.ms != null ? stat("Time", ctx.fmtDuration(s.ms), "sky") : ""}${stat("Sets", s.sets, "lime")}${stat("PRs", s.prs, "gold")}</span>
-      ${s.records.length ? `<ul class="prs">${s.records.map((r) => `<li>${ctx.MEDAL}<span class="prname">${esc(r.name)}</span><span class="prval">${ctx.numHtml(r.best, r.unit)}</span></li>`).join("")}</ul>` : ""}`;
+      ${s.records.length ? `<ul class="prs">${s.records.map((r) => `<li>${ctx.MEDAL}<span class="prname">${esc(r.name)}</span><span class="prval">${ctx.recHtml ? ctx.recHtml(r) : ctx.numHtml(r.best, r.unit)}</span></li>`).join("")}</ul>` : ""}`;
   }
   let action = "";
   if (!preview) {

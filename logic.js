@@ -2,6 +2,12 @@
 // The coach's plan lives in a text file (plans/*.md). This reads it, works out which
 // session is today's, and how far up the ladder the client is.
 
+import { cleanKg, setsOf, better, bestSet } from "./weight.js";
+
+// Raised when what's saved in a log changes shape (2: weights, `kg` beside `vals`). app.js checks
+// it, so a copy of this file saved by an older version can't load a newer log and drop parts of it.
+export const LOGIC_V = 2;
+
 /* ---------- reading the plan file ---------- */
 
 // The format, in short (the full version is in the README):
@@ -262,6 +268,9 @@ export function fmtPrescription(item) {
 
 /* ---------- the ladder ---------- */
 
+// A set done with help (a minus weight: a band taking load off) isn't the real thing yet.
+const helped = (log, itemKey, j) => (log.kg?.[itemKey]?.[j] ?? 0) < 0;
+
 // Each step's best comes from two places, whichever is higher:
 // a test typed in on the ladder itself, or any logged set of an exercise with
 // exactly that step's name (capitals don't matter).
@@ -278,7 +287,7 @@ export function ladderState(ladder, logs, tests) {
     for (const log of Object.values(logs || {})) {
       for (const [itemKey, vals] of Object.entries(log.vals || {})) {
         if (itemKey.replace(/#\d+$/, "") !== k) continue;
-        for (const v of vals) take(v, log.date);
+        vals.forEach((v, j) => { if (!helped(log, itemKey, j)) take(v, log.date); });
       }
     }
     const done = best != null && best >= step.target;
@@ -302,7 +311,7 @@ export function stepHistory(step, logs, tests) {
   for (const log of Object.values(logs || {})) {
     for (const [itemKey, vals] of Object.entries(log.vals || {})) {
       if (itemKey.replace(/#\d+$/, "") !== k) continue;
-      for (const v of vals) take(v, log.date);
+      vals.forEach((v, j) => { if (!helped(log, itemKey, j)) take(v, log.date); });
     }
   }
   return Object.keys(byDate).sort().map((date) => ({ date, best: byDate[date] }));
@@ -347,6 +356,8 @@ function cleanLog(log) {
     if (Array.isArray(arr)) vals[ik] = arr.map((v) => (Number.isFinite(v) ? v : null));
   }
   const out = { date: typeof log.date === "string" ? log.date : null, vals, note: typeof log.note === "string" ? log.note : "" };
+  const kg = cleanKg(log.kg);
+  if (Object.keys(kg).length) out.kg = kg;
   for (const k of TIMER_KEYS) if (Number.isFinite(log[k]) && log[k] >= 0) out[k] = log[k];
   return out;
 }
@@ -397,6 +408,7 @@ export function setNote(state, session, text, today) {
 
 const copyLog = (log) => {
   const out = { date: log.date, vals: JSON.parse(JSON.stringify(log.vals || {})), note: log.note || "" };
+  if (log.kg) out.kg = JSON.parse(JSON.stringify(log.kg));
   if (log.t0 != null) out.t0 = log.t0;
   if (log.ms != null) out.ms = log.ms;
   return out;
@@ -519,6 +531,8 @@ export const weeksAgoLabel = (n) => (n === 0 ? "this week" : n === 1 ? "last wee
 export const fmtVal = (n, unit) => (unit === "sec" ? `${n} s` : `${n} reps`);
 
 const filled = (vals) => (vals || []).filter((v) => v != null);
+// A best set as it's handed on: { best } and, only when there is one, { kg }.
+const shown = (set) => (set.kg ? { best: set.v, kg: set.kg } : { best: set.v });
 
 // Trainings and sets per week, oldest first, ending with this week. A training counts
 // in the week of its date once it has a number in it.
@@ -545,29 +559,37 @@ export function exerciseStats(sessions, logs, today, weeks = 8) {
     const log = logs?.[s.key];
     if (!log?.date) continue;
     for (const it of s.items) {
-      const vals = filled(log.vals?.[it.key]);
-      if (!it.sets.length || !vals.length) continue;
+      const sets = setsOf(log, it.key);
+      if (!it.sets.length || !sets.length) continue;
       const k = `${keyOf(it.name)}|${it.unit}`;
       if (!seen.has(k)) seen.set(k, { name: it.name, unit: it.unit, days: [] });
-      seen.get(k).days.push({ date: log.date, best: Math.max(...vals) });
+      seen.get(k).days.push({ date: log.date, top: bestSet(sets) });
     }
   }
   return [...seen.values()].map(({ name, unit, days }) => {
     days.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    // Once he has ever put weight on it, the line follows the weight; until then, the reps.
+    const weighted = days.some((d) => d.top.kg > 0);
     let pr = null;
     const byWeek = new Map();
     for (const d of days) {
-      if (!pr || d.best > pr.best) pr = d;
+      if (!pr || better(d.top, pr.top)) pr = d;
       const ago = weeksAgo(d.date, today);
-      if (!byWeek.has(ago) || d.best > byWeek.get(ago)) byWeek.set(ago, d.best);
+      if (!byWeek.has(ago) || better(d.top, byWeek.get(ago))) byWeek.set(ago, d.top);
     }
     const logged = [...byWeek.keys()].sort((a, b) => a - b);
-    const at = (i) => (logged[i] === undefined ? null : { weeksAgo: logged[i], best: byWeek.get(logged[i]) });
+    const at = (i) => (logged[i] === undefined ? null : { weeksAgo: logged[i], ...shown(byWeek.get(logged[i])) });
     const latest = at(0);
     const previous = at(1);
-    const trend = !previous ? null : latest.best > previous.best ? "up" : latest.best < previous.best ? "down" : "same";
-    const weekly = Array.from({ length: weeks }, (_, i) => byWeek.get(weeks - 1 - i) ?? null);
-    return { name, unit, pr: { best: pr.best, date: pr.date }, latest, previous, trend, weekly, lastDate: days[days.length - 1].date };
+    const [now, was] = [byWeek.get(logged[0]), byWeek.get(logged[1])];
+    const trend = !previous ? null : better(now, was) ? "up" : better(was, now) ? "down" : "same";
+    const weekly = Array.from({ length: weeks }, (_, i) => {
+      const top = byWeek.get(weeks - 1 - i);
+      return top ? (weighted ? top.kg || 0 : top.v) : null;
+    });
+    const out = { name, unit, pr: { ...shown(pr.top), date: pr.date }, latest, previous, trend, weekly, lastDate: days[days.length - 1].date };
+    if (weighted) out.weighted = true;
+    return out;
   }).sort((a, b) => (a.lastDate < b.lastDate ? 1 : a.lastDate > b.lastDate ? -1 : 0));
 }
 
@@ -592,25 +614,27 @@ export function sessionSummary(sessions, logs, session) {
   let sets = 0;
   const now = new Map();
   for (const it of session.items) {
-    const vals = filled(log?.vals?.[it.key]);
-    sets += vals.length;
-    if (!it.sets.length || !vals.length) continue;
+    const done = setsOf(log, it.key);
+    sets += done.length;
+    if (!it.sets.length || !done.length) continue;
     const k = `${keyOf(it.name)}|${it.unit}`;
-    const best = Math.max(...vals);
-    if (!now.has(k) || best > now.get(k).best) now.set(k, { name: it.name, unit: it.unit, best });
+    const top = bestSet(done);
+    if (!now.has(k) || better(top, now.get(k).top)) now.set(k, { name: it.name, unit: it.unit, top });
   }
   const before = new Map();
   for (const s of sessions) {
     const other = logs?.[s.key];
     if (!other?.date || !log?.date || other.date >= log.date) continue;
     for (const it of s.items) {
-      const vals = filled(other.vals?.[it.key]);
-      if (!vals.length) continue;
+      const done = setsOf(other, it.key);
+      if (!done.length) continue;
       const k = `${keyOf(it.name)}|${it.unit}`;
-      before.set(k, Math.max(before.get(k) ?? -Infinity, ...vals));
+      const top = bestSet(done);
+      if (!before.has(k) || better(top, before.get(k))) before.set(k, top);
     }
   }
-  const records = [...now.entries()].filter(([k, r]) => before.has(k) && r.best > before.get(k)).map(([, r]) => r);
+  const records = [...now.entries()].filter(([k, r]) => before.has(k) && better(r.top, before.get(k)))
+    .map(([, r]) => ({ name: r.name, unit: r.unit, ...shown(r.top) }));
   return { sets, records };
 }
 

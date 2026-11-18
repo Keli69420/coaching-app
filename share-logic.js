@@ -13,16 +13,18 @@ const str = (v, max) => (typeof v === "string" ? v.replace(/[\u0000-\u0008\u000B
 const int = (v, max) => (Number.isInteger(v) && v >= 0 && v <= max ? v : null);
 const num = (v) => (typeof v === "number" && Number.isFinite(v) && v >= 0 && v < 1e5 ? v : null);
 const unit = (u) => (u === "sec" ? "sec" : "reps");
+// A record's weight in kg, only when it has one (weight.js has the same limits).
+const kgOf = (v) => (typeof v === "number" && Number.isFinite(v) && v !== 0 && v >= -200 && v <= 500 ? { kg: v } : {});
 const isObj = (v) => Boolean(v) && typeof v === "object" && !Array.isArray(v);
 
 /* ---------- what a post holds ---------- */
 
-// A shared workout: its name, day, time, number of sets and the PRs it set.
+// A shared workout: its name, day, time, number of sets and the PRs it set (with the weight, if any).
 // Never the set-by-set numbers, never his notes.
 export function activitySnapshot(act, records = []) {
   return cleanSnapshot("activity", {
     title: act?.title, date: act?.date, ms: act?.ms == null ? null : Math.round(act.ms), sets: act?.sets, prs: act?.prs,
-    records: (records || []).map((r) => ({ name: r.name, best: r.best, unit: r.unit })),
+    records: (records || []).map((r) => ({ name: r.name, best: r.best, unit: r.unit, kg: r.kg })),
   });
 }
 
@@ -47,7 +49,7 @@ export function cleanSnapshot(kind, s) {
     sets: int(s.sets, 999) ?? 0,
     prs: int(s.prs, 999) ?? 0,
     records: records.slice(0, 5).filter(isObj)
-      .map((r) => ({ name: str(r.name, NAME_MAX).trim(), best: num(r.best), unit: unit(r.unit) }))
+      .map((r) => ({ name: str(r.name, NAME_MAX).trim(), best: num(r.best), unit: unit(r.unit), ...kgOf(r.kg) }))
       .filter((r) => r.name && r.best != null),
   };
 }

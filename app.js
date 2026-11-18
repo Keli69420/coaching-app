@@ -5,6 +5,10 @@ import {
   startSession, finishSession, reopenSession, stopSession, deleteSession, tidyLogs, sessionSummary,
   allTimeTotals, cleanPrefs, elapsed, hasClock, pauseClock, resumeClock, fmtClock, fmtDuration, activities,
 } from "./logic.js";
+// The same file again as a whole, only to read LOGIC_V: asking for a name an older saved copy
+// doesn't have would stop the app before it could do anything about it.
+import * as LOGIC from "./logic.js";
+import { parseKg, setKg, lastKg, fmtKg } from "./weight.js";
 import { AVATAR_PX, cropRect, cleanAvatar } from "./picture.js";
 import { activitySnapshot, skillSnapshot } from "./share-logic.js";
 import {
@@ -36,19 +40,27 @@ const meEl = document.getElementById("me");
 const pagesEl = document.getElementById("pages");
 const statusEl = document.getElementById("status");
 
-// On the first open after an update, a slow signal can pair the index.html saved by an older
-// version with this app.js: the service worker fetches each file on its own (seen 18 Nov on a copy
-// from before the picture button). It saves the fresh copy in the background either way, so one
-// reload gets matching files. Once per session, so a broken copy can never loop.
-if (!meEl || !pagesEl?.querySelector('[data-page="groups"]')) {
+// On the first open after an update, a slow signal can pair a file saved by an older version with
+// this app.js: the service worker fetches each file on its own (seen 18 Nov on an index.html from
+// before the picture button). It saves the fresh copy in the background either way, so one reload,
+// a moment later, gets matching files. Once per session, so a broken copy can never loop.
+const oldPage = !meEl || !pagesEl?.querySelector('[data-page="groups"]');
+// An older logic.js doesn't know about weights and would drop them from his logs on loading.
+const oldLogic = !(LOGIC.LOGIC_V >= 2);
+if (oldPage || oldLogic) {
   let again = false;
   try {
     again = !sessionStorage.getItem("pathletics.reloaded");
     sessionStorage.setItem("pathletics.reloaded", "1");
   } catch { /* no session storage: carry on with what's here */ }
   if (again) {
-    location.reload();
-    throw new Error("Older page saved on this phone; reloading once.");
+    setTimeout(() => location.reload(), 900);
+    throw new Error("Older files saved on this phone; reloading once.");
+  }
+  if (oldLogic) {
+    // Still old after the reload: don't touch his logs with it. Nothing is read or saved.
+    if (main) main.innerHTML = '<section class="msg"><h2>Updating</h2><p>Close Pathletics and open it again with internet.</p></section>';
+    throw new Error("logic.js is older than this app.js.");
   }
 }
 
@@ -160,6 +172,10 @@ const MEDAL = `<svg class="medal" viewBox="0 0 16 18" width="14" height="16" ari
 // A number with its unit after it, small capitals in the same colour, like Apple Fitness: "22 SEC", "6 REPS".
 const unitWord = (n, unit) => (unit === "sec" ? "sec" : n === 1 ? "rep" : "reps");
 const numHtml = (n, unit) => `<b class="num">${esc(n)}</b><small class="unit">${unitWord(n, unit)}</small>`;
+// A best set: "8 REPS", or with a weight "60 KG × 8".
+const recHtml = (r) => (r.kg
+  ? `<b class="num">${esc(fmtKg(r.kg))}</b><small class="unit">kg</small><span class="times">×</span><b class="num">${esc(r.best)}</b>${r.unit === "sec" ? '<small class="unit">sec</small>' : ""}`
+  : numHtml(r.best, r.unit));
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const longDate = (iso) => {
   const [y, m, d] = iso.split("-").map(Number);
@@ -178,6 +194,8 @@ const capital = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
 const plan = () => program?.plans.find((p) => p.id === state.plan) ?? null;
 const sessions = () => sessionsOf(plan());
+// Every plan's workouts, for whatever counts across plans: records, totals, activities.
+const everySession = () => program.plans.flatMap(sessionsOf);
 const current = () => currentIndex(sessions(), state.logs, today);
 // The workout on screen: one opened from the Plan tab, otherwise today's.
 const shownIndex = () => {
@@ -276,7 +294,7 @@ function clockHtml(log) {
 function activeHtml(s, log) {
   return `
     ${hasClock(log) && !log.saved ? clockHtml(log) : ""}
-    <div class="items">${s.items.map((it) => itemHtml(it, log)).join("")}</div>
+    <div class="items">${s.items.map((it) => itemHtml(it, log, s.key)).join("")}</div>
     <textarea class="card note" id="note" rows="2" placeholder="Notes" aria-label="Notes">${esc(log.note ?? "")}</textarea>
     <button type="button" class="cta" data-act="finish">Save workout</button>
     <p class="formerr" id="finisherr" role="alert"></p>
@@ -285,7 +303,7 @@ function activeHtml(s, log) {
 
 // Saved: a summary card instead of the fields. Edit opens them again.
 function savedHtml(s, next) {
-  const { sets, records } = sessionSummary(program.plans.flatMap(sessionsOf), state.logs, s);
+  const { sets, records } = sessionSummary(everySession(), state.logs, s);
   const log = state.logs[s.key];
   const bits = [count(sets, "set", "sets")];
   if (log?.ms != null) bits.unshift(fmtDuration(log.ms));
@@ -298,7 +316,7 @@ function savedHtml(s, next) {
         <div class="savedtext"><h3>${esc(s.day)} saved</h3><p>${bits.join(" · ")}</p></div>
         <button type="button" class="ghostbtn" data-act="reopen">Edit</button>
       </div>
-      ${records.length ? `<ul class="prs">${records.map((r) => `<li>${MEDAL}<span class="prname">${esc(r.name)}</span><span class="prval">${numHtml(r.best, r.unit)}</span></li>`).join("")}</ul>` : ""}
+      ${records.length ? `<ul class="prs">${records.map((r) => `<li>${MEDAL}<span class="prname">${esc(r.name)}</span><span class="prval">${recHtml(r)}</span></li>`).join("")}</ul>` : ""}
     </div>
     ${groupsOn ? `<button type="button" class="sharebtn" data-act="share" data-kind="activity" data-key="${esc(s.key)}">Share</button>` : ""}
     ${nextName ? `<p class="next">Up next: ${esc(nextName)}</p>` : ""}
@@ -313,7 +331,7 @@ const countHtml = (hits, total) => `
   </span>`;
 
 // One card per exercise. A set is a disc with the goal inside until he types; a hit disc fills in.
-function itemHtml(it, log) {
+function itemHtml(it, log, sessionKey) {
   if (!it.sets.length) {
     return `
       <div class="card item reminder">
@@ -322,6 +340,9 @@ function itemHtml(it, log) {
       </div>`;
   }
   const vals = log?.vals?.[it.key] ?? [];
+  const kgs = log?.kg?.[it.key] ?? [];
+  // What he loaded last time, greyed in the kg boxes.
+  const hints = lastKg(everySession(), state.logs, it.name, it.unit, sessionKey);
   const discs = it.sets.map((t, j) => {
     const v = vals[j] ?? null;
     const goal = t.min == null ? "max" : fmtTarget(t, it.unit).replace(" s", "s");
@@ -329,6 +350,8 @@ function itemHtml(it, log) {
       <span class="set${hit(t, v) ? " hit" : ""}">
         <input class="f" data-item="${esc(it.key)}" data-set="${j}" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off"
           placeholder="${esc(goal)}" aria-label="${esc(`${it.name}, set ${j + 1}, goal ${fmtTarget(t, it.unit)}`)}" value="${v ?? ""}">
+        <input class="k" data-item="${esc(it.key)}" data-set="${j}" type="text" inputmode="decimal" maxlength="6" autocomplete="off"
+          placeholder="${hints[j] != null ? esc(fmtKg(hints[j])) : "kg"}" aria-label="${esc(`${it.name}, set ${j + 1}, weight in kilos`)}" value="${kgs[j] != null ? esc(fmtKg(kgs[j]).replace("−", "-")) : ""}">
       </span>`;
   }).join("");
   return `
@@ -509,7 +532,7 @@ function sparkSvg(st) {
   const W = 88, H = 32, PAD = 4;
   const pts = sparkPoints(st.weekly, W, H, PAD);
   if (!pts.length) return "";
-  const says = st.weekly.map((v, i) => `${weeksAgoLabel(WEEKS - 1 - i)} ${v == null ? "not done" : fmtVal(v, st.unit)}`);
+  const says = st.weekly.map((v, i) => `${weeksAgoLabel(WEEKS - 1 - i)} ${v == null ? "not done" : st.weighted ? `${fmtKg(v)} kg` : fmtVal(v, st.unit)}`);
   const last = pts[pts.length - 1];
   return `
     <svg class="spark" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(`Best set per week: ${says.join(", ")}`)}">
@@ -520,7 +543,7 @@ function sparkSvg(st) {
 
 const exRowHtml = (st) => `
   <li class="exrow">
-    <div class="extext"><b>${esc(st.name)}</b><span class="pr">${MEDAL}${numHtml(st.pr.best, st.unit)}</span></div>
+    <div class="extext"><b>${esc(st.name)}</b><span class="pr">${MEDAL}${recHtml({ ...st.pr, unit: st.unit })}</span></div>
     ${sparkSvg(st)}
   </li>`;
 
@@ -528,7 +551,7 @@ function progressHtml() {
   const first = Object.values(state.logs).map((l) => l.date).filter(Boolean).sort()[0];
   WEEKS = Math.min(MAX_WEEKS, Math.max(MIN_WEEKS, first ? weeksAgo(first, today) + 1 : 0));
   const totals = weeklyTotals(state.logs, today, WEEKS);
-  const stats = exerciseStats(program.plans.flatMap(sessionsOf), state.logs, today, WEEKS);
+  const stats = exerciseStats(everySession(), state.logs, today, WEEKS);
   return `
     <section class="progress">
       <header class="head">
@@ -605,11 +628,11 @@ function shrinkPhoto(file) {
 const PAGE_NAMES = { today: "Today", plan: "Plan", progress: "Progress", groups: "Groups" };
 
 function profileHtml() {
-  const all = allTimeTotals(program.plans.flatMap(sessionsOf), state.logs);
+  const all = allTimeTotals(everySession(), state.logs);
   const steps = ladderState(program.ladder, state.logs, state.tests).steps;
   const goal = steps.length ? steps[steps.length - 1].name : "";
   const sub = [goal && `Goal: ${goal}`, all.since && `since ${fmtDate(all.since)}`].filter(Boolean).join(" · ");
-  const acts = activities(program.plans.flatMap(sessionsOf), state.logs);
+  const acts = activities(everySession(), state.logs);
   return `
     <section class="you">
       <button type="button" class="back" data-act="unprofile">${LEFT}<span>${PAGE_NAMES[before] || "Back"}</span></button>
@@ -776,6 +799,13 @@ root.addEventListener("input", (e) => {
     saveSoon();
     return;
   }
+  if (el.matches(".k[data-item]")) {
+    const s = sessions()[shownIndex()];
+    if (!state.logs[s.key]) return;
+    setKg(state, s, el.dataset.item, Number(el.dataset.set), parseKg(el.value));
+    saveSoon();
+    return;
+  }
   if (!el.matches(".f[data-item]")) return;
   const s = sessions()[shownIndex()];
   if (!state.logs[s.key]) return;
@@ -794,7 +824,7 @@ root.addEventListener("input", (e) => {
 // mouseup, so that first mouseup is cancelled too. Same as Yapp.
 let justFocused = null;
 root.addEventListener("focusin", (e) => {
-  if (!e.target.matches(".f")) return;
+  if (!e.target.matches(".f, .k")) return;
   justFocused = e.target;
   e.target.setSelectionRange(0, e.target.value.length);
 });
@@ -807,6 +837,11 @@ root.addEventListener("mouseup", (e) => {
 });
 root.addEventListener("focusout", (e) => {
   if (e.target.matches(".f[data-item]") && parseNum(e.target.value) === null) e.target.value = "";
+  // A weight is shown the way it was understood: "62,5" becomes "62.5", junk goes.
+  if (e.target.matches(".k[data-item]")) {
+    const kg = parseKg(e.target.value);
+    e.target.value = kg == null ? "" : fmtKg(kg).replace("−", "-");
+  }
 });
 
 root.addEventListener("keydown", (e) => {
@@ -860,7 +895,7 @@ root.addEventListener("click", (e) => {
   }
   // Share a saved workout or an unlocked skill: only a summary goes, never the sets or notes.
   if (act === "share") {
-    const all = program.plans.flatMap(sessionsOf);
+    const all = everySession();
     let snap = null;
     if (btn.dataset.kind === "skill") {
       const step = ladderState(program.ladder, state.logs, state.tests).steps.find((x) => x.key === btn.dataset.step);
@@ -1061,7 +1096,7 @@ function goGroups(quiet = false) {
   if (!quiet) enterGroups();
 }
 initGroups({
-  esc, LEFT, RIGHT, TICK, MEDAL, PERSON, count, numHtml, fmtDuration, armed, render, toTop, goGroups, avatarHtml,
+  esc, LEFT, RIGHT, TICK, MEDAL, PERSON, count, numHtml, recHtml, fmtDuration, armed, render, toTop, goGroups, avatarHtml,
   page: () => page,
   myName: () => prefs.name.trim(),
   setName: (n) => { prefs.name = String(n).slice(0, 40); savePrefs(); drawMe(); },
