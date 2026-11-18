@@ -10,6 +10,7 @@ import {
 import * as LOGIC from "./logic.js";
 import { parseKg, setKg, lastKg, fmtKg } from "./weight.js";
 import { sessionsOfAny } from "./plans.js";
+import { progressChanged, progressOnOpen } from "./coach.js";
 import {
   initPlans, ownPlans, planPageOpen, closePlanPage, planLabel, plansListHtml, planPageHtml, plansClick, plansInput, plansBlur,
 } from "./planpages.js";
@@ -18,10 +19,10 @@ import * as PAGES from "./planpages.js";
 import { initMarket, marketOpen, closeMarket, marketHtml, marketClick, marketSubmit } from "./market.js";
 import { AVATAR_PX, cropRect, cleanAvatar } from "./picture.js";
 import { activitySnapshot, skillSnapshot } from "./share-logic.js";
-import { cleanTier } from "./coach-logic.js";
+import { cleanTier, progressSnapshot } from "./coach-logic.js";
 import {
   groupsOn, initGroups, groupsHtml, groupsClick, groupsSubmit, groupsInput, enterGroups,
-  sharing, stopShare, startShare, shareHtml, accountHtml, accountValue, profileChanged,
+  sharing, stopShare, startShare, shareHtml, accountHtml, accountValue, profileChanged, coachesHtml,
 } from "./groups.js";
 
 // The coach's plan. One file holds the ladder and every starting level (Plan A, B, C...).
@@ -122,6 +123,7 @@ function persist() {
   try {
     localStorage.setItem(KEY, JSON.stringify(state));
     pending = false;
+    progressChanged(); // a coach he shares with gets the new totals soon
     statusEl.textContent = "";
     return true;
   } catch {
@@ -770,7 +772,8 @@ function settingHtml(key) {
           ? `<p>Everything you log is saved on this phone only. Only what you share in Groups goes to the Pathletics server, with your name and photo, and stays there until you delete it.</p>`
           : `<p>Everything you log is saved on this phone only. Nothing is sent anywhere.</p>`}
         <p>Keep Pathletics on your home screen: deleting it from there deletes your logs too.</p>
-      </div>`;
+      </div>
+      ${groupsOn ? coachesHtml() : ""}`;
   }
   return `
     <section class="settings">
@@ -1167,6 +1170,7 @@ initGroups({
   myName: () => prefs.name.trim(),
   setName: (n) => { prefs.name = String(n).slice(0, 40); savePrefs(); drawMe(); },
   myAvatar: () => avatar,
+  snapshot: () => progressSnapshot(everySession(), state.logs, todayIso()),
   setAvatar: (a) => { avatar = cleanAvatar(a); saveAvatar(); drawMe(); },
 });
 const groupsTab = pagesEl.querySelector('[data-page="groups"]');
@@ -1215,6 +1219,7 @@ async function start() {
     loadError = "Couldn't load the plan. Open the app once with internet.";
   }
   render();
+  progressOnOpen();
 }
 
 start();

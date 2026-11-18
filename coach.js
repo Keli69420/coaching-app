@@ -5,7 +5,9 @@
 // The pure parts are in coach-logic.js (tested). The server rules are in supabase/migrations.
 
 import { me, rest, rpc, errText } from "./social.js";
-import { cleanAssignment, assignedPlan, mergePlan, needsUpdate } from "./coach-logic.js";
+import { cleanAssignment, assignedPlan, mergePlan, needsUpdate, cleanProgress } from "./coach-logic.js";
+import { fmtSet } from "./weight.js";
+import { timeAgo } from "./share-logic.js";
 import { checkPlan } from "./plans.js";
 import { sendUp } from "./market.js";
 
@@ -190,4 +192,121 @@ export async function coachClick(act, btn) {
     plans.replace(local.id, mergePlan(local, incoming)); // same id, so it stays current if it was
     redraw();
   }
+}
+
+/* ---------- the student's progress, shared with his coach ---------- */
+
+// Whether he shares with any coach is kept on this phone, so the app can send on open before Groups loads.
+const SHARE_KEY = "pathletics.sharing";
+const SENT_KEY = "pathletics.progressSent";
+const OPEN_GAP_MS = 10 * 60 * 1000;
+const SEND_DELAY_MS = 5000;
+const read = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+const write = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch { /* not remembered */ } };
+
+let sharingOn = read(SHARE_KEY) === "1";
+let sendTimer = null;
+let lastJson = ""; // what the server has, so a change that isn't one sends nothing
+let sending = false;
+let dirty = false; // a send was asked for while one was running
+
+export const isSharing = () => sharingOn;
+export function setSharing(on) {
+  sharingOn = Boolean(on);
+  write(SHARE_KEY, sharingOn ? "1" : null);
+  if (!sharingOn) { clearTimeout(sendTimer); sendTimer = null; lastJson = ""; dirty = false; }
+}
+
+// Sends his progress now. Failures are silent: the next change or app open tries again.
+export async function sendProgress(force = false) {
+  const u = me();
+  if (!u || !sharingOn) return;
+  if (sending) { dirty = true; return; }
+  const snap = ctx.snapshot?.();
+  if (!snap) return;
+  const json = JSON.stringify(snap);
+  if (!force && json === lastJson) return;
+  sending = true;
+  try {
+    await rpc("save_progress", { p_body: snap }); // the server saves it only while he still shares
+    lastJson = json;
+    write(SENT_KEY, String(Date.now()));
+  } catch { /* try again next time */ }
+  sending = false;
+  if (dirty) { dirty = false; if (sharingOn && me()) await sendProgress(); }
+}
+
+// After a workout is saved, finished or deleted: sent once he has stopped for 5 s.
+export function progressChanged() {
+  if (!sharingOn || !me()) return;
+  clearTimeout(sendTimer);
+  sendTimer = setTimeout(() => sendProgress(), SEND_DELAY_MS);
+}
+
+// When the app opens: at most once every 10 minutes.
+export function progressOnOpen() {
+  if (!sharingOn || !me()) return;
+  if (Date.now() - (Number(read(SENT_KEY)) || 0) < OPEN_GAP_MS) return;
+  sendProgress();
+}
+
+/* ---------- the coach's side: one student's page ---------- */
+
+// snap: null while asked, false when nothing is shared, else what cleanProgress() gave.
+const St = { id: "", snap: null, at: 0, error: "", seq: 0 };
+
+export async function studentLoad(id) {
+  const n = ++St.seq;
+  Object.assign(St, { id, snap: null, at: 0, error: "" });
+  try {
+    const rows = await rest(`progress?select=body,updated_at&user_id=eq.${encodeURIComponent(id)}`);
+    if (n !== St.seq) return;
+    const snap = Array.isArray(rows) && rows[0] ? cleanProgress(rows[0].body) : null;
+    St.snap = snap || false;
+    St.at = Date.parse(rows?.[0]?.updated_at) || 0;
+  } catch (e) {
+    if (n !== St.seq) return;
+    St.snap = false;
+    St.error = e?.said ? e.message : errText(e);
+  }
+  redraw();
+}
+
+const dayText = (iso) => {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+};
+const agoText = (ago) => (ago === 0 ? "This week" : `${ago}w ago`);
+
+// The body of the student's page (groups.js draws the back button and the heading).
+// "1 set", "3 sets".
+const plural = (k, word) => `${k} ${word}${k === 1 ? "" : "s"}`;
+
+export function studentHtml() {
+  if (St.snap == null) return `<p class="empty">Loading…</p>`;
+  if (!St.snap) return `<p class="empty">${esc(St.error || "Nothing shared yet.")}</p>`;
+  const { weeks, workouts, records } = St.snap;
+  const list = [...weeks].sort((a, b) => b.ago - a.ago);
+  const top = Math.max(1, ...list.map((w) => w.sets));
+  const week = (w) => `
+    <li class="mrow wkrow">
+      <span class="wklab">${agoText(w.ago)}</span>
+      <span class="wktrack" aria-hidden="true"><i style="width:${Math.round((w.sets / top) * 100)}%"></i></span>
+      <span class="wknum">${plural(w.workouts, "workout")} · ${plural(w.sets, "set")}</span>
+    </li>`;
+  const sets = (w) => w.items.reduce((n, it) => n + it.sets.length, 0);
+  const workout = (w) => `
+    <li><details class="wkout">
+      <summary><span class="rtext"><b>${esc(w.day)}</b><small>${esc(dayText(w.date))} · ${plural(sets(w), "set")}</small></span></summary>
+      <ul class="wkitems">${w.items.map((it) => `<li><b>${esc(it.name)}</b><small>${it.sets.map((x) => esc(fmtSet(x, it.unit))).join(" · ")}</small></li>`).join("")}</ul>
+    </details></li>`;
+  const rec = (r) => `<li class="mrow"><span class="rtext"><b>${esc(r.name)}</b></span><span class="val">${esc(fmtSet({ v: r.best, kg: r.kg }, r.unit))}</span></li>`;
+  return `
+    ${St.at ? `<p class="foot">Updated ${esc(timeAgo(St.at, Date.now()))}</p>` : ""}
+    <h2 class="sect">Last ${list.length} weeks</h2>
+    ${list.length ? `<ul class="card rows">${list.map(week).join("")}</ul>` : `<p class="empty">No weeks yet.</p>`}
+    <h2 class="sect">Workouts</h2>
+    ${workouts.length ? `<ul class="card rows">${workouts.map(workout).join("")}</ul>` : `<p class="empty">No saved workouts yet.</p>`}
+    <h2 class="sect">Records</h2>
+    ${records.length ? `<ul class="card rows">${records.map(rec).join("")}</ul>` : `<p class="empty">No records yet.</p>`}`;
 }

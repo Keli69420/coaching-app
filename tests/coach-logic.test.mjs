@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cleanTier, limitsFor, countPlans, planBlock, limitText, groupBlock, cleanAssignment, assignedPlan, mergePlan, needsUpdate } from "../coach-logic.js";
+import { cleanTier, limitsFor, countPlans, planBlock, limitText, groupBlock, cleanAssignment, assignedPlan, mergePlan, needsUpdate, progressSnapshot, cleanProgress } from "../coach-logic.js";
 import { newPlan, copyPlan, cleanPlan, sessionsOfAny, toProgramPlan } from "../plans.js";
 
 const built = (n) => Array.from({ length: n }, (_, i) => ({ id: `b${i}` }));
@@ -277,4 +277,127 @@ test("mergePlan keeps the local assignment id, takes plan and at from incoming",
   assert.equal(m.asg.id, local.asg.id);
   assert.equal(m.asg.plan, incoming.asg.plan);
   assert.equal(m.asg.at, incoming.asg.at);
+});
+
+/* ---------- progress snapshot ---------- */
+
+const mkSession = (key, day, items, extra = {}) => ({ key, day, week: "W1", weekNotes: ["week note"], notes: ["day note SECRET-DAY"], items, ...extra });
+const mkItem = (key, name, unit = "reps", n = 3) => ({ key, name, unit, note: "item note SECRET-ITEM", sets: Array.from({ length: n }, () => ({ min: 5, max: 8 })) });
+
+test("progressSnapshot carries numbers and names, never a note", () => {
+  const sessions = [
+    mkSession("a", "Push", [mkItem("i1", "Push-up"), mkItem("i2", "Plank", "sec", 2), mkItem("i3", "Dip")], { plan: "Plan A" }),
+    mkSession("b", "Pull", [mkItem("j1", "Row")]),
+  ];
+  const logs = {
+    a: { date: "2026-11-17", done: true, ms: 3600000, note: "SECRET-LOG felt sick", vals: { i1: [10, null, 12], i2: [30, 40], i3: [null, null, null] }, kg: { i1: [null, null, 10] } },
+    b: { date: "2026-11-10", saved: true, vals: { j1: [8, 8, 8] }, kg: { j1: [40, 40, 40] }, note: "SECRET-LOG2" },
+  };
+  const snap = progressSnapshot(sessions, logs, "2026-11-18");
+  const json = JSON.stringify(snap);
+  assert.ok(!/SECRET/.test(json) && !json.includes("note") && !json.includes("felt sick"));
+  assert.equal(snap.v, 1);
+  assert.equal(snap.weeks.length, 8);
+  assert.deepEqual(snap.weeks.at(-1), { ago: 0, workouts: 1, sets: 4 });
+  assert.deepEqual(snap.weeks.at(-2), { ago: 1, workouts: 1, sets: 3 });
+  assert.deepEqual(snap.workouts.map((w) => w.date), ["2026-11-17", "2026-11-10"]);
+  const w0 = snap.workouts[0];
+  assert.equal(w0.day, "Push");
+  assert.equal(w0.plan, "Plan A");
+  assert.equal(w0.ms, 3600000);
+  assert.deepEqual(w0.items.map((i) => i.name), ["Push-up", "Plank"]);
+  assert.deepEqual(w0.items[0].sets, [{ v: 10 }, { v: 12, kg: 10 }]);
+  assert.equal(w0.items[1].unit, "sec");
+  assert.equal(snap.workouts[1].plan, undefined);
+  assert.deepEqual(snap.workouts[1].items[0].sets, [{ v: 8, kg: 40 }, { v: 8, kg: 40 }, { v: 8, kg: 40 }]);
+});
+
+test("progressSnapshot skips unsaved workouts and caps strings", () => {
+  const long = "x".repeat(100);
+  const sessions = [mkSession("a", long, [mkItem("i1", long)], { plan: long }), mkSession("b", "Draft", [mkItem("j1", "Row")])];
+  const logs = { a: { date: "2026-11-17", saved: true, vals: { i1: [5] } }, b: { date: "2026-11-18", vals: { j1: [5] } } };
+  const snap = progressSnapshot(sessions, logs, "2026-11-18");
+  assert.equal(snap.workouts.length, 1);
+  assert.equal(snap.workouts[0].day.length, 40);
+  assert.equal(snap.workouts[0].plan.length, 40);
+  assert.equal(snap.workouts[0].items[0].name.length, 40);
+  assert.deepEqual(progressSnapshot([], {}, "2026-11-18").workouts, []);
+});
+
+test("progressSnapshot ignores a workout still in progress everywhere", () => {
+  const sessions = [mkSession("a", "Push", [mkItem("i1", "Push-up")]), mkSession("b", "Pull", [mkItem("j1", "Row")])];
+  const base = { a: { date: "2026-11-17", done: true, vals: { i1: [10, 10] } } };
+  const before = progressSnapshot(sessions, base, "2026-11-18");
+  const after = progressSnapshot(sessions, { ...base, b: { date: "2026-11-18", vals: { j1: [8, 8, 8] }, kg: { j1: [50, 50, 50] } } }, "2026-11-18");
+  assert.deepEqual(after, before);
+});
+
+test("progressSnapshot keeps the newest 60 workouts and stays small", () => {
+  const sessions = [];
+  const logs = {};
+  for (let i = 0; i < 80; i++) {
+    const items = Array.from({ length: 12 }, (_, k) => mkItem(`i${k}`, `Exercise number ${k} with a long name`, "reps", 6));
+    sessions.push(mkSession(`s${i}`, `Day ${i}`, items));
+    const d = new Date(Date.UTC(2026, 0, 1 + i)).toISOString().slice(0, 10);
+    logs[`s${i}`] = { date: d, done: true, note: "n".repeat(500), vals: Object.fromEntries(items.map((it) => [it.key, [10, 11, 12, 13, 14, 15]])), kg: Object.fromEntries(items.map((it) => [it.key, [80, 80, 82.5, 82.5, 85, 85]])) };
+  }
+  const snap = progressSnapshot(sessions, logs, "2026-11-18");
+  assert.equal(snap.workouts.length, 60);
+  assert.equal(snap.workouts[0].day, "Day 79");
+  assert.equal(snap.workouts[59].day, "Day 20");
+  for (let i = 1; i < 60; i++) assert.ok(snap.workouts[i - 1].date > snap.workouts[i].date);
+  assert.ok(JSON.stringify(snap).length < 200 * 1024);
+  assert.ok(!JSON.stringify(snap).includes("nnnn"));
+});
+
+test("progressSnapshot records are all-time bests, weighted when weight was used", () => {
+  const sessions = [mkSession("a", "A", [mkItem("i1", "Squat"), mkItem("i2", "Push-up")]), mkSession("b", "B", [mkItem("j1", "Squat"), mkItem("j2", "Push-up")])];
+  const logs = {
+    a: { date: "2025-01-05", saved: true, vals: { i1: [5], i2: [20] }, kg: { i1: [100] } },
+    b: { date: "2026-11-17", saved: true, vals: { j1: [8], j2: [25] }, kg: { j1: [80] } },
+  };
+  const rec = progressSnapshot(sessions, logs, "2026-11-18").records;
+  assert.deepEqual(rec.find((r) => r.name === "Squat"), { name: "Squat", unit: "reps", best: 5, kg: 100 });
+  assert.deepEqual(rec.find((r) => r.name === "Push-up"), { name: "Push-up", unit: "reps", best: 25 });
+});
+
+test("cleanProgress keeps good data and drops junk", () => {
+  const good = progressSnapshot([mkSession("a", "Push", [mkItem("i1", "Push-up")])], { a: { date: "2026-11-17", done: true, vals: { i1: [10] }, kg: { i1: [5] } } }, "2026-11-18");
+  assert.deepEqual(cleanProgress(JSON.parse(JSON.stringify(good))), good);
+  for (const j of [null, undefined, 5, "x", [], {}, { v: 2 }]) assert.equal(cleanProgress(j), null);
+  const dirty = {
+    v: 1, evil: "x", note: "no",
+    weeks: [{ ago: 0, workouts: 1, sets: 2, note: "x" }, { ago: "a", workouts: 1, sets: 1 }, null, { ago: 1, workouts: NaN, sets: 1 }],
+    workouts: [
+      { date: "bad", day: "x", items: [{ name: "a", unit: "reps", sets: [{ v: 1 }] }] },
+      { date: "2026-11-17", day: "D", note: "secret", items: [{ name: "Row", unit: "reps", note: "s", sets: [{ v: 8, kg: 20, x: 1 }, { v: "8" }, { v: Infinity }, null] }, { name: "", unit: "reps", sets: [{ v: 1 }] }, { name: "Bad unit", unit: "km", sets: [{ v: 1 }] }, { name: "Empty", unit: "reps", sets: [] }] },
+      { date: "2026-11-16", day: "Empty", items: [] },
+      7,
+    ],
+    records: [{ name: "Row", unit: "reps", best: 8, kg: 20, extra: 1 }, { name: "Row", unit: "reps", best: "x" }, { name: "Z", unit: "sec", best: -1 }, "no"],
+  };
+  const c = cleanProgress(dirty);
+  assert.deepEqual(c.weeks, [{ ago: 0, workouts: 1, sets: 2 }]);
+  assert.deepEqual(c.workouts, [{ date: "2026-11-17", day: "D", items: [{ name: "Row", unit: "reps", sets: [{ v: 8, kg: 20 }] }] }]);
+  assert.deepEqual(c.records, [{ name: "Row", unit: "reps", best: 8, kg: 20 }]);
+  assert.deepEqual(Object.keys(c).sort(), ["records", "v", "weeks", "workouts"]);
+  const huge = { v: 1, workouts: Array.from({ length: 500 }, () => ({ date: "2026-11-17", day: "D", items: [{ name: "R", unit: "reps", sets: [{ v: 1 }] }] })) };
+  assert.equal(cleanProgress(huge).workouts.length, 60);
+});
+
+test("progressSnapshot stays under the server's 200 KB even at every cap", () => {
+  const sessions = [];
+  const logs = {};
+  for (let d = 0; d < 60; d++) {
+    const items = Array.from({ length: 25 }, (_, i) => mkItem(`k${i}`, `Exercise number ${i} with a long name xx`, "reps", 12));
+    sessions.push(mkSession(`s${d}`, `Workout ${d}`, items, { plan: "A plan with a long title here" }));
+    const vals = {};
+    const kg = {};
+    for (let i = 0; i < 25; i++) { vals[`k${i}`] = Array(12).fill(10); kg[`k${i}`] = Array(12).fill(102.5); }
+    logs[`s${d}`] = { date: new Date(Date.UTC(2026, 0, 1 + d)).toISOString().slice(0, 10), vals, kg, done: true, ms: 3600000 };
+  }
+  const snap = progressSnapshot(sessions, logs, "2026-03-15");
+  assert.ok(new TextEncoder().encode(JSON.stringify(snap)).length <= 200000);
+  assert.ok(snap.workouts.length > 0 && snap.workouts.length < 60);
+  assert.equal(snap.workouts[0].date, "2026-03-01"); // the newest are the ones kept
 });

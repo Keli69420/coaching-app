@@ -4,6 +4,8 @@
 // these limits only ever block adding. A plan a coach assigned (it carries `asg`) never counts.
 
 import { cleanPlan, checkPlan, LIMITS } from "./plans.js";
+import { weeklyTotals, exerciseStats, hasValues } from "./logic.js";
+import { setsOf } from "./weight.js";
 
 const FREE = { built: 1, saved: 5, total: 6, groups: 1, groupSize: 10, kind: "friends" };
 const COACH = { built: 100, saved: 100, total: 100, groups: 10, groupSize: 50, kind: "coaching" };
@@ -135,4 +137,109 @@ export function mergePlan(local, incoming) {
 export function needsUpdate(local, a) {
   if (!local?.asg || !a?.plan) return false;
   return local.asg.plan === a.plan.id && a.plan.at > local.asg.at;
+}
+
+/* ---------- progress a student shares with his coach ---------- */
+
+// Only numbers and exercise, workout and plan names leave the phone: never a note of any kind.
+// The snapshot is built by copying listed fields one by one, so nothing else can slip in.
+const SNAP = { weeks: 8, workouts: 60, items: 25, sets: 12, records: 200, name: 40 };
+const num = (v, lo, hi) => (typeof v === "number" && Number.isFinite(v) && v >= lo && v <= hi ? v : null);
+const count = (v, hi) => { const n = num(v, 0, hi); return n == null ? null : Math.round(n); };
+const unitOf = (u) => (u === "sec" ? "sec" : u === "reps" ? "reps" : null);
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function snapSet(v, kg) {
+  const n = num(v, 0, 9999);
+  if (n == null) return null;
+  const out = { v: Math.round(n) };
+  const k = num(kg, -200, 500);
+  if (k) out.kg = k;
+  return out;
+}
+
+export function progressSnapshot(sessions, allLogs, today) {
+  const list = Array.isArray(sessions) ? sessions : [];
+  // Only workouts that are finished or saved; one still in progress never leaves the phone.
+  const logs = Object.fromEntries(Object.entries(allLogs && typeof allLogs === "object" ? allLogs : {}).filter(([, l]) => l && (l.done || l.saved)));
+  const weeks = weeklyTotals(logs, today, SNAP.weeks).map((w) => ({ ago: w.weeksAgo, workouts: w.sessions, sets: w.sets }));
+  const done = [];
+  for (const s of list) {
+    const log = logs?.[s.key];
+    if (!log?.date || !DATE.test(log.date) || !(log.done || log.saved) || !hasValues(log)) continue;
+    const items = [];
+    for (const it of s.items || []) {
+      const sets = setsOf(log, it.key).map((x) => snapSet(x.v, x.kg)).filter(Boolean);
+      const unit = unitOf(it.unit);
+      const name = line(it.name, SNAP.name);
+      if (!sets.length || !unit || !name) continue;
+      items.push({ name, unit, sets: sets.slice(0, SNAP.sets) });
+    }
+    if (!items.length) continue;
+    const w = { date: log.date, day: line(s.day, SNAP.name) || "Workout" };
+    const plan = line(s.plan, SNAP.name);
+    if (plan) w.plan = plan;
+    const ms = num(log.ms, 0, 86400000);
+    if (ms != null) w.ms = Math.round(ms);
+    w.items = items.slice(0, SNAP.items);
+    done.push({ w, t0: Number.isFinite(log.t0) ? log.t0 : 0 });
+  }
+  done.sort((a, b) => (a.w.date === b.w.date ? b.t0 - a.t0 : a.w.date < b.w.date ? 1 : -1));
+  const records = exerciseStats(list, logs, today, 1).slice(0, SNAP.records).flatMap((r) => {
+    const name = line(r.name, SNAP.name);
+    const unit = unitOf(r.unit);
+    const best = num(r.pr?.best, 0, 9999);
+    if (!name || !unit || best == null) return [];
+    const out = { name, unit, best: Math.round(best) };
+    const kg = num(r.pr.kg, -200, 500);
+    if (kg) out.kg = kg;
+    return [out];
+  });
+  const snap = { v: 1, weeks, workouts: done.slice(0, SNAP.workouts).map((d) => d.w), records };
+  // The server takes 200 KB: drop the oldest workouts until it fits, with room to spare.
+  while (snap.workouts.length && new TextEncoder().encode(JSON.stringify(snap)).length > 180000) snap.workouts.pop();
+  return snap;
+}
+
+// What the coach's phone got back from the server, cut down to what it can draw.
+export function cleanProgress(raw) {
+  if (!isObj(raw) || raw.v !== 1) return null;
+  const arr = (v) => (Array.isArray(v) ? v : []);
+  const weeks = arr(raw.weeks).flatMap((w) => {
+    if (!isObj(w)) return [];
+    const ago = count(w.ago, 520);
+    const workouts = count(w.workouts, 10000);
+    const sets = count(w.sets, 1000000);
+    return ago == null || workouts == null || sets == null ? [] : [{ ago, workouts, sets }];
+  }).slice(0, SNAP.weeks);
+  const workouts = arr(raw.workouts).flatMap((w) => {
+    if (!isObj(w) || typeof w.date !== "string" || !DATE.test(w.date)) return [];
+    const items = arr(w.items).flatMap((it) => {
+      if (!isObj(it)) return [];
+      const name = line(it.name, SNAP.name);
+      const unit = unitOf(it.unit);
+      const sets = arr(it.sets).flatMap((x) => (isObj(x) ? [snapSet(x.v, x.kg)].filter(Boolean) : [])).slice(0, SNAP.sets);
+      return name && unit && sets.length ? [{ name, unit, sets }] : [];
+    }).slice(0, SNAP.items);
+    if (!items.length) return [];
+    const out = { date: w.date, day: line(w.day, SNAP.name) || "Workout" };
+    const plan = line(w.plan, SNAP.name);
+    if (plan) out.plan = plan;
+    const ms = num(w.ms, 0, 86400000);
+    if (ms != null) out.ms = Math.round(ms);
+    out.items = items;
+    return [out];
+  }).slice(0, SNAP.workouts);
+  const records = arr(raw.records).flatMap((r) => {
+    if (!isObj(r)) return [];
+    const name = line(r.name, SNAP.name);
+    const unit = unitOf(r.unit);
+    const best = count(r.best, 9999);
+    if (!name || !unit || best == null) return [];
+    const out = { name, unit, best };
+    const kg = num(r.kg, -200, 500);
+    if (kg) out.kg = kg;
+    return [out];
+  }).slice(0, SNAP.records);
+  return { v: 1, weeks, workouts, records };
 }

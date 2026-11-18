@@ -9,7 +9,7 @@ import {
   cleanPost, cleanGroup, cleanMember, cleanCode, fmtCode, timeAgo, checkJoin, joinError, refusal, CAPTION_MAX, NAME_MAX,
 } from "./share-logic.js";
 import { cleanAvatar } from "./picture.js";
-import { initCoach, coachMember, coachGroupLoad, coachGroupClick } from "./coach.js";
+import { initCoach, coachMember, coachGroupLoad, coachGroupClick, setSharing, sendProgress, studentLoad, studentHtml } from "./coach.js";
 
 export const groupsOn = configured;
 
@@ -24,7 +24,7 @@ export const GROUP_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle c
 
 // view, signed out: "welcome" | "join" | "signin"
 // view, signed in:  "code" (account but no profile yet) | "home" | "group" | "newgroup" | "joingroup"
-const fresh = () => ({ view: me() ? "home" : "welcome", error: "", note: "", profile: null, groups: null, feed: null, group: null, share: null });
+const fresh = () => ({ view: me() ? "home" : "welcome", error: "", note: "", profile: null, groups: null, feed: null, group: null, share: null, mine: null, student: null, coachNote: "" });
 let G = fresh();
 const avatars = new Map(); // someone's id → their picture (data URL), "" while asked or when they have none
 // Each load gets a number; an answer to an older one is dropped. The list and a group count apart,
@@ -45,6 +45,7 @@ function bodyHtml() {
   if (!me()) return welcomeHtml();
   if (v === "code") return codeHtml();
   if (v === "group" && G.group) return groupHtml();
+  if (v === "student" && G.student) return studentPageHtml();
   if (v === "newgroup") return newGroupHtml();
   if (v === "joingroup") return joinGroupHtml();
   return homeHtml();
@@ -140,7 +141,7 @@ function groupHtml() {
     ${g.kind === "coaching" ? `<p class="eyebrow">Coaching group</p>` : ""}
     ${head(g.name, n ? ctx.count(n, "member", "members") : "")}
     ${noteLine()}${errBox()}
-    ${g.owner ? inviteHtml(g) : ""}
+    ${g.owner ? inviteHtml(g) : consentHtml(g)}
     <h2 class="sect">Posts</h2>
     ${feedHtml(g.posts, "Nothing here yet. Share a saved workout, or a skill from Progress.")}
     <h2 class="sect">Members</h2>
@@ -162,14 +163,98 @@ function inviteHtml(g) {
 function memberHtml(m) {
   const you = m.id === me()?.id;
   const co = coachMember(m, G.group); // a coach's "Assign a plan", in a coaching group he owns
-  const sub = [m.owner ? "Owner" : "", co?.sub || ""].filter(Boolean).join(" · ");
+  // A coach sees who shares progress, and opens the ones who do.
+  const watch = G.group.owner && G.group.kind === "coaching" && !you && !m.owner;
+  const shares = watch && G.group.shares?.has(m.id);
+  const sub = [m.owner ? "Owner" : "", watch ? (shares ? "Sharing progress" : "Not sharing") : "", co?.sub || ""].filter(Boolean).join(" · ");
+  const text = `<b>${esc(m.name)}${you ? " (you)" : ""}</b>${sub ? `<small>${sub}</small>` : ""}`;
   return `
     <li class="mrow">
       <span class="avatar sm">${avatarOf(m)}</span>
-      <span class="rtext"><b>${esc(m.name)}${you ? " (you)" : ""}</b>${sub ? `<small>${sub}</small>` : ""}</span>
+      ${shares ? `<button type="button" class="rtext gname" data-act="g-student" data-id="${m.id}">${text}</button>` : `<span class="rtext">${text}</span>`}
       ${co ? co.button : ""}
       ${G.group.owner && !you ? `<button type="button" class="gact" data-act="g-remove" data-id="${m.id}">Remove</button>` : ""}
     </li>${co?.below || ""}`;
+}
+
+/* ---------- sharing progress with a coach ---------- */
+
+const ASKED_KEY = "pathletics.progressAsked";
+const askedIds = () => { try { const l = JSON.parse(localStorage.getItem(ASKED_KEY)); return Array.isArray(l) ? l : []; } catch { return []; } };
+const markAsked = (id) => { try { localStorage.setItem(ASKED_KEY, JSON.stringify([...new Set([...askedIds(), id])].slice(-100))); } catch { /* asked again next time */ } };
+const INCLUDES = "Your saved workouts with sets and weights, your PRs and weekly totals. Never your notes.";
+
+// The card on a coaching group's page, until he has answered for that group on this phone.
+function consentHtml(g) {
+  if (g.kind !== "coaching" || g.owner || g.myShare !== false || askedIds().includes(g.id)) return "";
+  const coach = g.members?.find((m) => m.owner)?.name || "your coach";
+  return `
+    <div class="card info consent">
+      <p><b>Let ${esc(coach)} see your workouts and PRs?</b></p>
+      <p>${INCLUDES}</p>
+      <div class="consentbtns">
+        <button type="button" class="ghostbtn plain" data-act="g-shareno" data-id="${g.id}">Not now</button>
+        <button type="button" class="ghostbtn" data-act="g-shareyes" data-id="${g.id}">Share with my coach</button>
+      </div>
+    </div>`;
+}
+
+// His coaching groups as the server has them (as a member, not the owner), and whether he shares in each.
+// `flags` are his own sharing flags from the server (my_progress_sharing), by group id.
+const sharingFlags = (rows) => new Map((Array.isArray(rows) ? rows : []).map((r) => [r?.group_id, r?.share_progress === true]));
+function setMine(rows, flags) {
+  G.mine = (rows || []).flatMap((r) => {
+    const g = cleanGroup(r);
+    return g && !g.owner && r.group?.kind === "coaching" ? [{ id: g.id, name: g.name, on: flags.get(g.id) === true }] : [];
+  });
+  syncSharing();
+}
+const syncSharing = () => { if (G.mine) setSharing(G.mine.some((x) => x.on)); };
+function setMineOn(id, on) {
+  const x = G.mine?.find((y) => y.id === id);
+  if (x) x.on = on;
+  if (G.group?.id === id) G.group.myShare = on;
+  syncSharing();
+}
+
+let mineAsked = 0;
+function fetchMine() {
+  const u = me();
+  if (!u || Date.now() - mineAsked < 10000) return;
+  mineAsked = Date.now();
+  Promise.all([rest(`group_members?select=role,group:groups(id,name,kind)&user_id=eq.${u.id}`), rpc("my_progress_sharing")])
+    .then(([rows, flags]) => { setMine(rows, sharingFlags(flags)); ctx.render?.(); })
+    .catch(() => {});
+}
+
+// Settings → Data & privacy: the "Coaches" section. Empty when he has no coach.
+export function coachesHtml() {
+  if (!me()) return "";
+  if (G.mine == null) { setTimeout(fetchMine, 0); return ""; }
+  if (!G.mine.length) return "";
+  return `
+    <h2 class="sect">Coaches</h2>
+    <ul class="card rows">${G.mine.map((x) => `
+      <li><button type="button" class="row" role="switch" aria-checked="${x.on}" data-act="g-sharetoggle" data-id="${x.id}">
+        <span class="rtext"><b>${esc(x.name)}</b><small>Share my progress</small></span>
+        <span class="pswitch${x.on ? " on" : ""}" aria-hidden="true"><i></i></span>
+      </button></li>`).join("")}
+    </ul>
+    <p class="foot">${INCLUDES}</p>
+    ${G.coachNote ? `<p class="gnote" role="status">${esc(G.coachNote)}</p>` : ""}`;
+}
+
+function studentPageHtml() {
+  return `
+    ${back("g-studentback", G.group?.name || "Group")}
+    ${head(G.student.name, "Shared progress")}
+    ${studentHtml()}`;
+}
+
+async function setShare(group, on) {
+  await rpc("set_progress_sharing", { p_group: group, p_on: on });
+  setMineOn(group, on);
+  if (on) sendProgress(true);
 }
 
 function newGroupHtml() {
@@ -365,6 +450,7 @@ function redraw() {
 function failed(e) {
   if (e?.kind === "auth") {
     forget();
+    setSharing(false);
     ctx.setTier?.("free");
     G = { ...fresh(), view: "signin", note: "Please sign in again." };
   } else {
@@ -403,8 +489,9 @@ async function load() {
     G.profile = { id: prof.id, name: prof.name };
     adoptProfile(prof);
     ctx.setTier?.(cleanTier(prof.tier));
-    const [mem, feed] = await Promise.all([
+    const [mem, flags, feed] = await Promise.all([
       rest(`group_members?select=role,group:groups(id,name,kind)&user_id=eq.${uid}&order=joined_at.desc`),
+      rpc("my_progress_sharing"),
       rest(`posts?select=${POSTS}&audience=eq.everyone&order=created_at.desc&limit=${FEED_MAX}`),
     ]);
     if (n !== seqHome) return;
@@ -413,6 +500,7 @@ async function load() {
       if (g) g.kind = r.group?.kind === "coaching" ? "coaching" : "friends";
       return g;
     }).filter(Boolean);
+    setMine(mem, sharingFlags(flags));
     G.feed = (feed || []).map(cleanPost).filter(Boolean);
     if (G.view === "code") G.view = "home";
     if (G.share && !G.share.audience && G.groups.length) G.share.audience = G.groups[0].id;
@@ -431,10 +519,11 @@ async function openGroup(g) {
   ctx.toTop();
   const n = ++seqGroup;
   try {
-    const [posts, mem, info] = await Promise.all([
+    const [posts, mem, info, flags] = await Promise.all([
       rest(`posts?select=${POSTS}&group_id=eq.${g.id}&order=created_at.desc&limit=${FEED_MAX}`),
       rest(`group_members?select=role,user:profiles(id,name)&group_id=eq.${g.id}&order=joined_at`),
       rest(`groups?select=id,name,kind&id=eq.${g.id}`), // its name, also when he came in by a code
+      rpc("my_progress_sharing"), // his own flag; the server never shows him anyone else's
     ]);
     if (n !== seqGroup || G.group?.id !== g.id) return;
     const members = (mem || []).map(cleanMember).filter(Boolean);
@@ -445,13 +534,21 @@ async function openGroup(g) {
       load();
       return;
     }
+    const owner = members.some((m) => m.id === me().id && m.owner);
+    const coaching = info?.[0]?.kind === "coaching";
+    // Only the coach who owns a coaching group is told who shares (anyone else gets nothing).
+    const sharers = owner && coaching ? await rpc("group_progress_sharing", { p_group: g.id }) : [];
+    if (n !== seqGroup || G.group?.id !== g.id) return;
     Object.assign(G.group, {
       name: cleanGroup({ group: info?.[0] })?.name || G.group.name,
       kind: info?.[0]?.kind === "coaching" ? "coaching" : "friends",
       posts: (posts || []).map(cleanPost).filter(Boolean),
       members,
-      owner: members.some((m) => m.id === me().id && m.owner),
+      owner,
+      shares: new Set((Array.isArray(sharers) ? sharers : []).map((r) => r?.user_id)),
+      myShare: sharingFlags(flags).get(g.id) === true,
     });
+    setMineOn(g.id, G.group.myShare);
     redraw();
     fetchAvatars([...G.group.posts.map((p) => p.author?.id), ...members.map((m) => m.id)]);
     if (G.group.owner && G.group.kind === "coaching") coachGroupLoad(g.id);
@@ -596,18 +693,51 @@ export async function groupsClick(act, btn) {
   if (act === "g-open") { G.note = ""; openGroup(G.groups.find((g) => g.id === id)); return; }
   if (act === "g-retry") { G.error = ""; if (G.view === "group" && G.group) openGroup(G.group); else load(); return; }
   if (act === "g-asg" || act === "g-asgpick") { coachGroupClick(act, btn); return; }
+  if (act === "g-student") {
+    const m = G.group?.members?.find((x) => x.id === id);
+    if (!m) return;
+    G.student = { id: m.id, name: m.name };
+    G.view = "student";
+    ctx.render();
+    ctx.toTop();
+    studentLoad(m.id);
+    return;
+  }
+  if (act === "g-studentback") { G.view = "group"; G.student = null; ctx.render(); ctx.toTop(); return; }
+  if (act === "g-sharetoggle") {
+    const x = G.mine?.find((y) => y.id === id);
+    if (!x || btn.disabled) return;
+    const on = !x.on;
+    btn.disabled = true;
+    try {
+      await setShare(id, on);
+      G.coachNote = on ? "Your coach can now see your progress." : "Your coach can no longer see your progress.";
+    } catch (e) {
+      if (e?.kind === "auth") { failed(e); return; }
+      G.coachNote = words(e);
+    }
+    ctx.render?.();
+    return;
+  }
+  if (act === "g-shareno") { markAsked(id); redraw(); return; }
   if (act === "g-unshare") { G.share = null; ctx.render(); ctx.toTop(); return; }
   if (act === "g-gogroups") { G.share = null; ctx.goGroups(); return; }
   if (act === "g-aud") { G.share.audience = btn.dataset.aud; redraw(); return; }
   if (act === "g-signout") {
     signOut();
+    setSharing(false);
     ctx.setTier?.("free");
     G = fresh();
     ctx.render();
     return;
   }
   try {
-    if (act === "g-invite") {
+    if (act === "g-shareyes") {
+      btn.disabled = true;
+      await setShare(id, true);
+      markAsked(id);
+      redraw();
+    } else if (act === "g-invite") {
       btn.disabled = true;
       const code = cleanCode(await rpc("group_invite", { p_group: G.group.id }));
       if (code) G.group.code = code;
@@ -653,6 +783,7 @@ export async function groupsClick(act, btn) {
       btn.disabled = true;
       await rpc("delete_my_account");
       forget();
+      setSharing(false);
       ctx.setTier?.("free");
       G = { ...fresh(), note: "Your account and posts are deleted." };
       ctx.render();

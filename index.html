@@ -8,7 +8,7 @@
   <meta name="robots" content="noindex">
   <!-- What the page may load and talk to. Groups only ever talks to Supabase. blob: is the photo he picks, read on the phone. The hash is the theme
        script below: change one letter of it and the hash must be made again (README). -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wshdTYRzjktc2JXX+JjFmw/x/vaChYS+IV8RFpsEgzs='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://wdmfmigipckgzfjamdje.supabase.co; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-SUHqbWWEFqbBfcJnlmWTKmVs0QhD7xc2npbrTVCaJSw='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://wdmfmigipckgzfjamdje.supabase.co; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
   <meta name="theme-color" content="#F2F2F7">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
@@ -24,6 +24,16 @@
       document.documentElement.dataset.theme = t;
       document.querySelector('meta[name="theme-color"]').content = t === "dark" ? "#000000" : "#F2F2F7";
     })();
+    // Right after an update, a slow signal can pair new and old saved files, and the app can't start
+    // ("no export named ..."). By then the new files are saved, so reload once (app.js uses the same key).
+    addEventListener("error", function (e) {
+      if (!/export|binding|import/i.test(String(e.message || ""))) return;
+      try {
+        if (sessionStorage.getItem("pathletics.reloaded")) return;
+        sessionStorage.setItem("pathletics.reloaded", "1");
+      } catch (x) { return; }
+      setTimeout(function () { location.reload(); }, 900);
+    });
   </script>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-180.png" type="image/png">

@@ -474,4 +474,205 @@ begin
   perform set_config('pathletics.checks', checks::text, false);
 end $$;
 
+-- Progress sharing (20261119000003_progress.sql): a student lets the coach of a coaching group see his progress.
+do $$
+declare
+  co constant uuid := '7e570000-0000-4000-8000-0000000000c1'; -- a coach who owns the coaching group
+  c2 constant uuid := '7e570000-0000-4000-8000-0000000000c2'; -- a coach of a different group
+  fr constant uuid := '7e570000-0000-4000-8000-0000000000f1'; -- a free account that owns some groups
+  s  constant uuid := '7e570000-0000-4000-8000-0000000000e1'; -- the student
+  m  constant uuid := '7e570000-0000-4000-8000-0000000000e2'; -- another member of the group
+  s3 constant uuid := '7e570000-0000-4000-8000-0000000000e3'; -- a student of the free owner
+  gk uuid; -- co's coaching group that c2 (a coach) takes over
+  g  uuid; -- co's coaching group (s, m)
+  g2 uuid; -- c2's coaching group
+  gf uuid; -- fr's friends group (s)
+  gp uuid; -- fr's coaching group (s3)
+  n int;
+  checks int := 0;
+begin
+  insert into auth.users (id, email, aud, role)
+  select u, 'p' || right(u::text, 2) || '@test.invalid', 'authenticated', 'authenticated' from unnest(array[co, c2, fr, s, m, s3]) u;
+  insert into public.profiles (id, name, tier) values (co, 'Coach', 'coach'), (c2, 'Coach2', 'coach'),
+    (fr, 'Free', 'free'), (s, 'Stu', 'free'), (m, 'Mia', 'free'), (s3, 'Sam', 'free');
+  insert into public.groups (name, kind) values ('PG', 'coaching') returning id into g;
+  insert into public.groups (name, kind) values ('PG2', 'coaching') returning id into g2;
+  insert into public.groups (name, kind) values ('PGF', 'friends') returning id into gf;
+  insert into public.groups (name, kind) values ('PGP', 'coaching') returning id into gp;
+  insert into public.group_members (group_id, user_id, role) values
+    (g, co, 'owner'), (g, s, 'member'), (g, m, 'member'), (g2, c2, 'owner'),
+    (gf, fr, 'owner'), (gf, s, 'member'), (gp, fr, 'owner'), (gp, s3, 'member');
+
+  -- Signed out: nothing.
+  perform set_config('role', 'anon', true);
+  begin perform 1 from public.progress; assert false, 'signed out could read progress';
+  exception when insufficient_privilege then checks := checks + 1; end;
+  begin perform public.set_progress_sharing(g, true); assert false, 'signed out could share';
+  exception when insufficient_privilege then checks := checks + 1; end;
+
+  -- Off by default; nobody can set it directly.
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims', json_build_object('sub', s, 'role', 'authenticated')::text, true);
+  assert (select not share_progress from public.my_progress_sharing() where group_id = g), 'sharing was on by default';
+  begin update public.group_members set share_progress = true where group_id = g and user_id = s;
+    assert false, 'a member set share_progress directly';
+  exception when insufficient_privilege then checks := checks + 1; end;
+  checks := checks + 1;
+
+  -- Only into a coaching group he is a member of.
+  begin perform public.set_progress_sharing(gf, true); assert false, 'shared with a friends group';
+  exception when others then
+    assert sqlerrm = 'not a coaching group', 'wrong refusal for a friends group: ' || sqlerrm; checks := checks + 1; end;
+  perform set_config('request.jwt.claims', json_build_object('sub', c2, 'role', 'authenticated')::text, true);
+  begin perform public.set_progress_sharing(g, true); assert false, 'a non-member shared';
+  exception when others then
+    assert sqlerrm = 'not a member of that group', 'wrong refusal for a non-member: ' || sqlerrm; checks := checks + 1; end;
+  perform set_config('request.jwt.claims', json_build_object('sub', co, 'role', 'authenticated')::text, true);
+  begin perform public.set_progress_sharing(g, true); assert false, 'the owner shared';
+  exception when others then
+    assert sqlerrm = 'not a member of that group', 'wrong refusal for the owner: ' || sqlerrm; checks := checks + 1; end;
+
+  -- Without sharing he can't write progress.
+  perform set_config('request.jwt.claims', json_build_object('sub', s, 'role', 'authenticated')::text, true);
+  begin perform public.save_progress('{"prs":[]}'); assert false, 'saved progress without sharing';
+  exception when insufficient_privilege then
+    assert sqlerrm = 'not sharing', 'wrong refusal for saving without sharing: ' || sqlerrm; checks := checks + 1; end;
+
+  -- With sharing he can insert and update his own row, not someone else's.
+  perform public.set_progress_sharing(g, true);
+  assert (select share_progress from public.my_progress_sharing() where group_id = g), 'sharing did not turn on';
+  perform public.save_progress('{"prs":[1]}');
+  perform public.save_progress('{"prs":[1,2]}');
+  assert (select body from public.progress where user_id = s) = '{"prs":[1,2]}'::jsonb, 'could not update own progress';
+  begin insert into public.progress (user_id, body) values (m, '{}'); assert false, 'wrote a row for someone else';
+  exception when insufficient_privilege then checks := checks + 1; end;
+  begin update public.progress set user_id = m where user_id = s; assert false, 'moved a row to someone else';
+  exception when insufficient_privilege then checks := checks + 1; end;
+  checks := checks + 3;
+
+  -- Bad bodies.
+  begin perform public.save_progress('[]'); assert false, 'a body that is not an object';
+  exception when check_violation then checks := checks + 1; end;
+  begin perform public.save_progress(jsonb_build_object('a', repeat('x', 200001)));
+    assert false, 'an oversize body';
+  exception when check_violation then checks := checks + 1; end;
+
+  -- m (same group, not sharing) can't write or see; co sees; c2 and the free owner don't.
+  perform set_config('request.jwt.claims', json_build_object('sub', m, 'role', 'authenticated')::text, true);
+  select count(*) into n from public.progress; assert n = 0, 'another member saw the progress';
+  begin update public.progress set body = '{"x":1}' where user_id = s; assert false, 'another member changed the progress';
+  exception when insufficient_privilege then null; end;
+  delete from public.progress where user_id = s;
+  get diagnostics n = row_count; assert n = 0, 'another member deleted the progress';
+  perform set_config('request.jwt.claims', json_build_object('sub', co, 'role', 'authenticated')::text, true);
+  select count(*) into n from public.progress where user_id = s; assert n = 1, 'the coach did not see the progress';
+  begin update public.progress set body = '{"x":1}' where user_id = s; assert false, 'the coach changed the progress';
+  exception when insufficient_privilege then null; end;
+  perform set_config('request.jwt.claims', json_build_object('sub', c2, 'role', 'authenticated')::text, true);
+  select count(*) into n from public.progress; assert n = 0, 'another coach saw the progress';
+  perform set_config('request.jwt.claims', json_build_object('sub', fr, 'role', 'authenticated')::text, true);
+  select count(*) into n from public.progress; assert n = 0, 'a free owner saw the progress';
+  checks := checks + 7;
+
+  -- Classmates can't see who shares: the flag isn't readable from the table, only through the functions.
+  perform set_config('request.jwt.claims', json_build_object('sub', m, 'role', 'authenticated')::text, true);
+  begin perform share_progress from public.group_members; assert false, 'a member read share_progress';
+  exception when insufficient_privilege then checks := checks + 1; end;
+  begin perform share_progress from public.group_members where user_id = m; assert false, 'a member read his own share_progress from the table';
+  exception when insufficient_privilege then checks := checks + 1; end;
+  select count(*) into n from public.group_members where group_id = g; assert n = 3, 'a member could no longer read the other columns';
+  select count(*) into n from public.my_progress_sharing(); assert n = 1, 'my_progress_sharing returned the wrong rows for m';
+  assert (select not share_progress from public.my_progress_sharing() where group_id = g), 'm shows as sharing';
+  select count(*) into n from public.group_progress_sharing(g); assert n = 0, 'a member learned who shares';
+  perform set_config('request.jwt.claims', json_build_object('sub', s, 'role', 'authenticated')::text, true);
+  select count(*) into n from public.my_progress_sharing(); assert n = 2, 'my_progress_sharing returned the wrong rows for s';
+  assert (select share_progress from public.my_progress_sharing() where group_id = g), 'my_progress_sharing lost his flag';
+  assert (select not share_progress from public.my_progress_sharing() where group_id = gf), 'a friends group shows as sharing';
+  select count(*) into n from public.group_progress_sharing(g); assert n = 0, 'a sharing student learned who shares';
+  perform set_config('request.jwt.claims', json_build_object('sub', co, 'role', 'authenticated')::text, true);
+  select count(*) into n from public.my_progress_sharing(); assert n = 1, 'the owner saw rows other than his own';
+  assert (select array_agg(user_id) from public.group_progress_sharing(g)) = array[s], 'the coach did not get exactly the sharer';
+  perform set_config('request.jwt.claims', json_build_object('sub', c2, 'role', 'authenticated')::text, true);
+  select count(*) into n from public.group_progress_sharing(g); assert n = 0, 'another coach learned who shares';
+  checks := checks + 6;
+  perform set_config('role', 'anon', true);
+  begin perform * from public.group_progress_sharing(g); assert false, 'signed out called group_progress_sharing';
+  exception when insufficient_privilege then checks := checks + 1; end;
+  perform set_config('role', 'authenticated', true);
+
+  -- A free owner of a "coaching" group can't see his student's progress (the tier decides).
+  reset role;
+  update public.group_members set share_progress = true where group_id = gp and user_id = s3;
+  insert into public.progress (user_id, body) values (s3, '{"prs":[]}');
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims', json_build_object('sub', fr, 'role', 'authenticated')::text, true);
+  select count(*) into n from public.progress; assert n = 0, 'a free owner saw a student''s progress';
+  perform set_config('request.jwt.claims', json_build_object('sub', s3, 'role', 'authenticated')::text, true);
+  select count(*) into n from public.progress; assert n = 1, 'a student did not see his own progress';
+  perform set_config('request.jwt.claims', json_build_object('sub', fr, 'role', 'authenticated')::text, true);
+  select count(*) into n from public.group_progress_sharing(gp); assert n = 0, 'a free owner learned who shares';
+  checks := checks + 3;
+
+  -- The coaching group becomes a friends group: sharing stops and the student's progress goes.
+  reset role;
+  update public.groups set kind = 'friends' where id = gp;
+  assert not exists (select 1 from public.progress where user_id = s3), 'progress stayed after the group stopped coaching';
+  assert not exists (select 1 from public.group_members where group_id = gp and share_progress), 'sharing stayed on in a friends group';
+  update public.groups set kind = 'coaching' where id = gp;
+  assert not exists (select 1 from public.group_members where group_id = gp and share_progress), 'sharing came back by itself';
+  checks := checks + 3;
+
+  -- Turning sharing off deletes the row, and the coach sees nothing.
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims', json_build_object('sub', s, 'role', 'authenticated')::text, true);
+  perform public.set_progress_sharing(g, false);
+  perform set_config('request.jwt.claims', json_build_object('sub', co, 'role', 'authenticated')::text, true);
+  select count(*) into n from public.progress; assert n = 0, 'the coach saw progress after sharing was turned off';
+  reset role;
+  assert not exists (select 1 from public.progress where user_id = s), 'progress stayed after sharing was turned off';
+  checks := checks + 2;
+
+  -- Leaving the group deletes the row.
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims', json_build_object('sub', s, 'role', 'authenticated')::text, true);
+  perform public.set_progress_sharing(g, true);
+  perform public.save_progress('{"prs":[]}');
+  delete from public.group_members where group_id = g and user_id = s;
+  get diagnostics n = row_count; assert n = 1, 'the student could not leave';
+  reset role;
+  assert not exists (select 1 from public.progress where user_id = s), 'progress stayed after the student left';
+  checks := checks + 2;
+
+  -- A new owner: consent resets. The coach owner leaves, another coach takes over, the group stays coaching.
+  insert into public.groups (name, kind) values ('PGK', 'coaching') returning id into gk;
+  insert into public.group_members (group_id, user_id, role, joined_at) values
+    (gk, co, 'owner', now() - interval '3 days'), (gk, c2, 'member', now() - interval '2 days'),
+    (gk, s, 'member', now() - interval '1 day'), (gk, m, 'member', now() - interval '1 day');
+  update public.group_members set share_progress = true where group_id = gk and user_id in (s, m);
+  insert into public.progress (user_id, body) values (s, '{"prs":[]}'), (m, '{"prs":[]}');
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims', json_build_object('sub', co, 'role', 'authenticated')::text, true);
+  select count(*) into n from public.progress; assert n = 2, 'the old coach did not see the progress before leaving';
+  delete from public.group_members where group_id = gk and user_id = co;
+  reset role;
+  assert (select role from public.group_members where group_id = gk and user_id = c2) = 'owner', 'the coach member did not take over';
+  assert (select kind from public.groups where id = gk) = 'coaching', 'the group stopped coaching';
+  assert not exists (select 1 from public.group_members where group_id = gk and share_progress), 'consent survived the new owner';
+  assert not exists (select 1 from public.progress where user_id in (s, m)), 'progress survived the new owner';
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims', json_build_object('sub', c2, 'role', 'authenticated')::text, true);
+  select count(*) into n from public.progress; assert n = 0, 'the new owner saw progress';
+  select count(*) into n from public.group_progress_sharing(gk); assert n = 0, 'the new owner saw who shared';
+  reset role;
+  checks := checks + 6;
+
+  -- Clean up.
+  delete from auth.users where id in (co, c2, fr, s, m, s3);
+  delete from public.groups where id in (g, g2, gf, gp, gk);
+  assert not exists (select 1 from public.profiles where id in (co, c2, fr, s, m, s3)), 'progress test people left behind';
+  assert not exists (select 1 from public.progress), 'progress rows left behind';
+
+  perform set_config('pathletics.checks', (current_setting('pathletics.checks')::int + checks)::text, false);
+end $$;
+
 select 'PASS: ' || current_setting('pathletics.checks') || ' checks' as result;
