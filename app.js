@@ -36,6 +36,22 @@ const meEl = document.getElementById("me");
 const pagesEl = document.getElementById("pages");
 const statusEl = document.getElementById("status");
 
+// On the first open after an update, a slow signal can pair the index.html saved by an older
+// version with this app.js: the service worker fetches each file on its own (seen 18 Nov on a copy
+// from before the picture button). It saves the fresh copy in the background either way, so one
+// reload gets matching files. Once per session, so a broken copy can never loop.
+if (!meEl || !pagesEl?.querySelector('[data-page="groups"]')) {
+  let again = false;
+  try {
+    again = !sessionStorage.getItem("pathletics.reloaded");
+    sessionStorage.setItem("pathletics.reloaded", "1");
+  } catch { /* no session storage: carry on with what's here */ }
+  if (again) {
+    location.reload();
+    throw new Error("Older page saved on this phone; reloading once.");
+  }
+}
+
 let today = todayIso();
 // Tabs (Keli, 17 Nov): "today" shows only today's workout, "plan" this week's workouts,
 // "progress" the ladder and his numbers, "groups" his groups and what people share (groups.js;
@@ -1052,7 +1068,8 @@ initGroups({
   myAvatar: () => avatar,
   setAvatar: (a) => { avatar = cleanAvatar(a); saveAvatar(); drawMe(); },
 });
-pagesEl.querySelector('[data-page="groups"]').hidden = !groupsOn;
+const groupsTab = pagesEl.querySelector('[data-page="groups"]');
+if (groupsTab) groupsTab.hidden = !groupsOn; // missing on a page saved before Groups (see the top)
 
 /* ---------- staying right when the app comes back ---------- */
 

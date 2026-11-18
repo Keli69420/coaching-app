@@ -114,7 +114,7 @@ node --test tests/logic.test.mjs tests/picture.test.mjs tests/share-logic.test.m
 
 After changing anything in `supabase/`, also run the rules test against the local server (see Groups setup) and see `PASS`.
 
-A new file the app imports goes into `SHELL` in `sw.js`, with the cache name bumped in the same commit. New helpers go in new files rather than `logic.js`: the service worker fetches each file separately, so a new `app.js` can meet an old saved `logic.js` once.
+A new file the app imports goes into `SHELL` in `sw.js`, with the cache name bumped in the same commit. New helpers go in new files rather than `logic.js`: the service worker fetches each file separately, so a new `app.js` can meet an old saved `logic.js` once. The same goes for `index.html`: `app.js` reloads once when the page has no Groups tab button (the check at its top), so an element `app.js` needs in the page has to arrive together with a new marker there.
 
 **To preview locally:** copy the site into `qa/site` (ignored by git) with the demo plan from `tests/fixtures/demo.md`, then
 
