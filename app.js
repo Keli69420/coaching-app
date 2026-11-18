@@ -13,6 +13,9 @@ import { sessionsOfAny } from "./plans.js";
 import {
   initPlans, ownPlans, planPageOpen, closePlanPage, planLabel, plansListHtml, planPageHtml, plansClick, plansInput, plansBlur,
 } from "./planpages.js";
+// The same file as a whole, only to read PAGES_V (see LOGIC above).
+import * as PAGES from "./planpages.js";
+import { initMarket, marketOpen, closeMarket, marketHtml, marketClick, marketSubmit } from "./market.js";
 import { AVATAR_PX, cropRect, cleanAvatar } from "./picture.js";
 import { activitySnapshot, skillSnapshot } from "./share-logic.js";
 import {
@@ -51,7 +54,9 @@ const statusEl = document.getElementById("status");
 const oldPage = !meEl || !pagesEl?.querySelector('[data-page="groups"]');
 // An older logic.js doesn't know about weights and would drop them from his logs on loading.
 const oldLogic = !(LOGIC.LOGIC_V >= 2);
-if (oldPage || oldLogic) {
+// An older planpages.js works, but without shared plans; a reload brings the new one.
+const oldPages = !(PAGES.PAGES_V >= 2);
+if (oldPage || oldLogic || oldPages) {
   let again = false;
   try {
     again = !sessionStorage.getItem("pathletics.reloaded");
@@ -243,8 +248,10 @@ function render() {
   chipEl.innerHTML = "";
   // No plan chosen yet (several in the coach's file, or his own was deleted): the list of plans,
   // and a plan's page opened from it, with no tabs until he picks one.
-  if (!picked) main.innerHTML = planPageOpen() ? planPageHtml() : `<section class="plan">${plansListHtml("Pick your plan")}</section>`;
+  if (!picked) main.innerHTML = marketOpen() ? marketHtml() : planPageOpen() ? planPageHtml() : `<section class="plan">${plansListHtml("Pick your plan")}</section>`;
   else if (sharing()) main.innerHTML = shareHtml();
+  // Find plans, or a shared plan opened from a post: over whatever tab he's on.
+  else if (marketOpen()) main.innerHTML = marketHtml();
   else if (page === "groups") main.innerHTML = groupsHtml();
   else if (page === "progress") main.innerHTML = progressHtml();
   else if (page === "profile") main.innerHTML = opened ? sessionHtml(shownIndex()) : setting ? settingHtml(setting) : profileHtml();
@@ -855,6 +862,11 @@ root.addEventListener("submit", (e) => {
     groupsSubmit(e.target);
     return;
   }
+  if (e.target.matches("form.pform")) {
+    marketSubmit(e.target);
+    e.target.querySelector("input")?.blur();
+    return;
+  }
   const form = e.target.closest("form.test");
   if (!form) return;
   const raw = form.querySelector("input").value;
@@ -897,6 +909,11 @@ root.addEventListener("click", (e) => {
   if (act.startsWith("p-")) {
     flush();
     plansClick(act, btn);
+    return;
+  }
+  if (act.startsWith("m-")) {
+    flush();
+    marketClick(act, btn);
     return;
   }
   // Share a saved workout or an unlocked skill: only a summary goes, never the sets or notes.
@@ -1046,6 +1063,7 @@ meEl.addEventListener("click", () => {
   flush();
   stopShare();
   closePlanPage();
+  closeMarket();
   opened = null;
   setting = null;
   if (page === "profile") page = before;
@@ -1059,7 +1077,7 @@ meEl.addEventListener("click", () => {
 pagesEl.addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-page]");
   if (!btn) return;
-  if (btn.dataset.page === page && viewing == null && !sharing() && !planPageOpen()) {
+  if (btn.dataset.page === page && viewing == null && !sharing() && !planPageOpen() && !marketOpen()) {
     toTop();
     if (page === "groups") enterGroups(); // tapping Groups again looks for new posts
     return;
@@ -1067,6 +1085,7 @@ pagesEl.addEventListener("click", (e) => {
   flush();
   stopShare();
   closePlanPage();
+  closeMarket();
   page = btn.dataset.page;
   viewing = null;
   opened = null;
@@ -1098,6 +1117,18 @@ function usePlan(id) {
   persist();
   return true;
 }
+
+// Back to the Plan tab, for market.js: after saving a shared plan, or opening Find plans.
+function goPlan() {
+  page = "plan";
+  viewing = null;
+  opened = null;
+  setting = null;
+  testing = null;
+  render();
+}
+
+initMarket({ esc, LEFT, RIGHT, armed, render, toTop, avatarHtml, goPlan, goGroups: () => goGroups() });
 
 initPlans({
   esc, LEFT, RIGHT, TICK, armed, render, toTop, fmtPrescription, usePlan,

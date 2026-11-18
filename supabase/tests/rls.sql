@@ -14,6 +14,10 @@ declare
   pg uuid; -- a's post to the group
   pe uuid; -- a's post to everyone
   pb uuid; -- b's post to the group
+  pl uuid; -- a's plan
+  pl2 uuid; -- b's plan
+  pp uuid; -- a's post of his plan to the group
+  px uuid; -- c's post of a's plan, once it's listed
   r jsonb;
   n int;
   checks int := 0;
@@ -146,6 +150,84 @@ begin
   perform public.report_post(pe, 'test');
   perform public.report_post(pe, 'again'); -- a second report of the same post is ignored
   checks := checks + 10;
+
+  -- Plans (20261118000001_plans.sql). a makes one: until it's listed or posted, it's his alone.
+  perform set_config('request.jwt.claims', json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  insert into public.plans (title, summary, body) values ('Test plan', '1 week', '{"weeks":[]}') returning id into pl;
+  begin insert into public.plans (author, title, body) values (b, 'x', '{}'); assert false, 'a made a plan as b';
+  exception when insufficient_privilege then checks := checks + 1; end;
+  begin insert into public.plans (title, body) values ('x', '[]'); assert false, 'a plan that is not an object';
+  exception when check_violation then checks := checks + 1; end;
+  begin insert into public.plans (title, body) values ('', '{}'); assert false, 'a plan with no name';
+  exception when check_violation then checks := checks + 1; end;
+  begin insert into public.posts (kind, audience, snapshot) values ('plan', 'everyone', '{}'); assert false, 'a plan post with no plan';
+  exception when check_violation then checks := checks + 1; end;
+  begin insert into public.posts (kind, audience, snapshot, plan_id) values ('activity', 'everyone', '{}', pl); assert false, 'a workout post carrying a plan';
+  exception when check_violation then checks := checks + 1; end;
+
+  perform set_config('request.jwt.claims', json_build_object('sub', b, 'role', 'authenticated')::text, true);
+  assert not exists (select 1 from public.plans where id = pl), 'b sees a''s plan before it is shared';
+  checks := checks + 1;
+  begin insert into public.posts (kind, audience, snapshot, plan_id) values ('plan', 'everyone', '{}', pl); assert false, 'b posted a plan he cannot see';
+  exception when insufficient_privilege then checks := checks + 1; end;
+  begin perform public.report_plan(pl, 'x'); assert false, 'b reported a plan he cannot see';
+  exception when no_data_found then checks := checks + 1; end;
+
+  -- a posts it to the group: b sees it, and still can't change it or pass it on. c sees nothing.
+  perform set_config('request.jwt.claims', json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  insert into public.posts (kind, audience, group_id, snapshot, plan_id) values ('plan', 'group', g, '{"title":"Test plan"}', pl) returning id into pp;
+  perform set_config('request.jwt.claims', json_build_object('sub', b, 'role', 'authenticated')::text, true);
+  assert exists (select 1 from public.plans where id = pl), 'b cannot see a plan posted in his group';
+  update public.plans set title = 'Hacked' where id = pl;
+  get diagnostics n = row_count; assert n = 0, 'b changed a''s plan';
+  delete from public.plans where id = pl;
+  get diagnostics n = row_count; assert n = 0, 'b deleted a''s plan';
+  checks := checks + 3;
+  begin insert into public.posts (kind, audience, snapshot, plan_id) values ('plan', 'everyone', '{}', pl); assert false, 'b passed a''s group plan on to everyone';
+  exception when insufficient_privilege then checks := checks + 1; end;
+  perform public.report_plan(pl, 'test');
+  perform public.report_plan(pl, 'again'); -- a second report of the same plan is ignored
+  perform set_config('request.jwt.claims', json_build_object('sub', c, 'role', 'authenticated')::text, true);
+  assert not exists (select 1 from public.plans where id = pl), 'c sees a plan posted in a group he is not in';
+  checks := checks + 1;
+
+  -- a lists it: every member can find it and post it. b lists one too, and c can see who made it.
+  perform set_config('request.jwt.claims', json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  update public.plans set listed = true where id = pl;
+  get diagnostics n = row_count; assert n = 1, 'a could not list his plan';
+  begin update public.plans set author = b where id = pl; assert false, 'a gave his plan another author';
+  exception when insufficient_privilege then checks := checks + 1; end;
+  perform set_config('request.jwt.claims', json_build_object('sub', b, 'role', 'authenticated')::text, true);
+  insert into public.plans (title, body, listed) values ('b''s plan', '{}', true) returning id into pl2;
+  perform set_config('request.jwt.claims', json_build_object('sub', c, 'role', 'authenticated')::text, true);
+  assert exists (select 1 from public.plans where id = pl), 'c cannot see a listed plan';
+  assert exists (select 1 from public.profiles where id = b), 'c cannot see who made a listed plan';
+  insert into public.posts (kind, audience, snapshot, plan_id) values ('plan', 'everyone', '{}', pl) returning id into px;
+  delete from public.posts where id = px;
+  get diagnostics n = row_count; assert n = 1, 'c could not delete his own post of a plan';
+  checks := checks + 4;
+
+  -- Unlisted and deleted again: gone for everyone else, and its post and reports go with it.
+  perform set_config('request.jwt.claims', json_build_object('sub', b, 'role', 'authenticated')::text, true);
+  delete from public.plans where id = pl2;
+  get diagnostics n = row_count; assert n = 1, 'b could not delete his plan';
+  perform set_config('request.jwt.claims', json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  update public.plans set listed = false where id = pl;
+  assert (select updated_at >= created_at from public.plans where id = pl), 'a change did not move updated_at';
+  perform set_config('request.jwt.claims', json_build_object('sub', c, 'role', 'authenticated')::text, true);
+  assert not exists (select 1 from public.plans where id = pl), 'c still sees an unlisted plan';
+  perform set_config('request.jwt.claims', json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  delete from public.plans where id = pl;
+  get diagnostics n = row_count; assert n = 1, 'a could not delete his plan';
+  assert not exists (select 1 from public.posts where id = pp), 'the deleted plan''s post is still there';
+  reset role;
+  assert not exists (select 1 from private.plan_reports where plan_id = pl), 'the deleted plan''s reports are still there';
+  perform set_config('role', 'authenticated', true);
+  checks := checks + 6;
+  for i in 1..10 loop insert into public.plans (title, body) values ('p' || i, '{}'); end loop;
+  begin insert into public.plans (title, body) values ('one too many', '{}'); assert false, 'no limit on new plans a day';
+  exception when raise_exception then checks := checks + 1; end;
+  delete from public.plans where author = a;
 
   -- c, outside the group: still can't see it or b.
   perform set_config('request.jwt.claims', json_build_object('sub', c, 'role', 'authenticated')::text, true);

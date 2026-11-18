@@ -2,9 +2,10 @@
 // Pure parts, tested in tests/plans.test.mjs. The pages are in planpages.js.
 //
 // A plan here:
-//   { id, title, by?, src?, weeks: [{ id, title, days: [{ id, title, items: [item] }] }] }
+//   { id, title, by?, src?, pub?, listed?, stale?, weeks: [{ id, title, days: [{ id, title, items: [item] }] }] }
 //   item: { name, sets (1–10), amount (a number, or null for "as many as he can"), unit ("reps"|"sec"), note }
 // `by` is who made it when it's a copy of someone's shared plan, `src` that plan's id on the server.
+// `pub`, `listed` and `stale` are about his own plan's shared copy (market.js).
 //
 // Weeks and workouts have ids of their own, and logs hang on those ids, so renaming one never
 // detaches what he logged. Exercises stay keyed by name, like in the coach's file: the ladder
@@ -68,6 +69,13 @@ export function cleanPlan(raw, { fresh = false, rand = Math.random } = {}) {
   const by = text(raw.by, LIMITS.name);
   if (by) plan.by = by;
   if (typeof raw.src === "string" && /^[0-9a-f-]{36}$/i.test(raw.src)) plan.src = raw.src;
+  // His own plan, once he has shared it: the id of the copy on the server, whether that copy is in
+  // the marketplace, and whether he has changed the plan since. A fresh copy starts unshared.
+  if (!fresh && typeof raw.pub === "string" && /^[0-9a-f-]{36}$/i.test(raw.pub)) {
+    plan.pub = raw.pub;
+    if (raw.listed === true) plan.listed = true;
+    if (raw.stale === true) plan.stale = true;
+  }
   return plan;
 }
 

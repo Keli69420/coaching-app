@@ -541,3 +541,17 @@ ul { margin: 0; padding: 0; list-style: none; }
 .padd.wide { display: block; width: 100%; margin-top: 22px; padding: 16px; border-radius: 24px; background: var(--card); text-align: center; }
 .build .cta { margin-top: 22px; }
 
+/* ---------- shared plans: the Share part of a plan's page, Find plans, plans in posts (18 Nov) ---------- */
+.pswitch { flex: none; position: relative; width: 50px; height: 30px; border-radius: 15px; background: var(--fill); transition: background-color .15s; }
+.pswitch i { position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .25); transition: transform .15s; }
+.pswitch.on { background: var(--lime-line); }
+.pswitch.on i { transform: translateX(20px); }
+.planpage .row:disabled { opacity: .5; }
+.planpage .rows + .ghostbtn, .planpage .foot + .ghostbtn { margin-top: 10px; }
+.pform { margin: 4px 0 14px; }
+.psearch { display: block; width: 100%; height: 44px; border-radius: 22px; padding: 0 18px; background: var(--card); }
+.mlist .avatar { flex: none; }
+.plantag { color: var(--sky-ink); }
+.post .psum { display: block; margin-top: 2px; }
+.post .ghostbtn { align-self: flex-start; margin-top: 12px; }
+

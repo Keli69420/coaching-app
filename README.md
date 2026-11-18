@@ -22,6 +22,9 @@ Four colours, each with one meaning, so they read at a glance:
   - **A plan's page:** its weeks, workouts and exercises, **Use this plan** (logs are kept, he can switch back), **Duplicate** (the coach's plan: "Copy to change it"), and for his own **Edit** and **Delete plan** (two taps).
   - **The builder** (Edit, or New plan): name, weeks, workouts, and per exercise a name, sets × reps, a **reps / sec** switch and a note. An empty number means "as many as you can". **Copy this week** adds the same workouts as the next week. Everything saves as he types; an exercise left without a name is dropped on Done.
   - `planpages.js` draws these, `plans.js` holds the rules; his plans are kept on the phone under `coach.plans`.
+  - **Sharing a plan** (Keli, 18 Nov; needs an account, `market.js`): on one of his own plans, **Share to a group or everyone** (a post, with the same sheet as a workout: his group first, Everyone a tap of its own) and **In the marketplace** (a switch; on means every member can find it). What's shared is a **copy on the server**; after he changes the plan, **Update shared copy** sends it again. Deleting the plan removes its shared copy and the posts carrying it.
+  - **Find plans** (the marketplace, under Your plans): the plans members switched on, newest first, with a search by name. A plan's page shows everything in it, **Save to my plans** (his own copy, on his phone, with "By …"; then Use this plan), and **Report this plan** (two taps). A plan saved from someone else can be used and changed but not shared on; a duplicate of it can.
+  - **In a feed**, a plan post is a card with the plan's name and size and **View plan**.
 - **Progress**: the **ladder** as three rings (for the first client: pull-ups → chest-to-bar → muscle-up) and a trend card for the step he's on; tap a ring to type a test. Below: workouts and sets this week against last week with mini bars, and one row per exercise with his record and a line of his best per week.
 - **Profile** (his picture top right, Keli 17 Nov): his photo (Keli 17 Nov: chosen under Settings → Profile), else his initial in a pink circle, or a person until he types a name; tapping it opens his name, goal, lifetime workouts, sets and PRs, with a back button to where he was and **Edit profile** (opens Settings → Profile). Under that, his **Activities**: every saved workout as a card, newest first, like Strava's (his name, "Today at 18:30", a title after the time of day such as "Evening Legs", then Time, Sets and PRs). Tapping one opens that workout, with ‹ Profile to go back. At the bottom, **Settings** (see below). `avatarHtml()` in `app.js` is the one place that draws his picture: top right, on the profile, on his activities and in Settings. The photo is cut to the middle square, shrunk to 256 px and kept as a small JPEG on the phone (`coach.avatar`, about 20 KB); `picture.js` holds the crop and the check that only such a JPEG is ever shown.
 - **Settings** (Keli 17 Nov: no tab any more, in categories at the bottom of the profile): a list like Strava's, each row showing its current value and opening its own page with ‹ Profile, which goes back to the same spot. **Profile**: photo (Choose / Change / Remove) and Name. **Appearance**: System / Light / Dark. **Account** (only with Groups on): email, Sign out, Delete account (two taps; deletes his posts and memberships, never his logs). **Data & privacy**: logs stay on this phone, and deleting the home-screen app deletes them; with Groups on it also says that what he shares goes to the server. Name and theme stay on the phone. A new setting goes into `SETTINGS` and `settingHtml()` in `app.js`.
@@ -112,7 +115,9 @@ It prints every plan as the app will read it and refuses typos with a line numbe
 | His own plans: their shape, limits, the builder's changes, turning one into workouts | `plans.js` (tested) |
 | The plan list, a plan's page, the builder | `planpages.js` |
 | What a post holds, cleaning what the server sends, error wording | `share-logic.js` (tested) |
-| Who may see and do what on the server | `supabase/migrations/20261117000001_groups.sql`, checked by `supabase/tests/rls.sql` |
+| Shared plans: what goes up, cleaning what comes down, the search box | `market-logic.js` (tested) |
+| Find plans, a shared plan's page, the Share part of his own plan's page | `market.js` |
+| Who may see and do what on the server | `supabase/migrations/` (`…0001_groups.sql`, then `20261118000001_plans.sql`), checked by `supabase/tests/rls.sql` |
 | Groups on or off, which server | `config.js` (empty = off) and `connect-src` in `index.html` |
 | What the page may load (security policy) | the `Content-Security-Policy` meta in `index.html`. It holds a hash of the inline theme script: change that script and make the hash again (`python3 -c` over the script's text, sha256, base64) or the theme stops working |
 | Icon | `tools/icon.html` draws it, `python3 -I tools/make_icon.py` saves `icon-180.png` and `icon-512.png` (open the link it prints) |
@@ -120,7 +125,7 @@ It prints every plan as the app will read it and refuses typos with a line numbe
 **Before pushing:**
 
 ```bash
-node --test tests/logic.test.mjs tests/picture.test.mjs tests/share-logic.test.mjs tests/weight.test.mjs tests/plans.test.mjs
+node --test tests/logic.test.mjs tests/picture.test.mjs tests/share-logic.test.mjs tests/weight.test.mjs tests/plans.test.mjs tests/market-logic.test.mjs
 ```
 
 After changing anything in `supabase/`, also run the rules test against the local server (see Groups setup) and see `PASS`.
@@ -142,14 +147,16 @@ python3 -m http.server 8921 --bind 127.0.0.1 --directory qa/site
 1. Make a free account at supabase.com and **one project**, region **EU** (Frankfurt or Zurich). Keep the database password in your password manager; the app never needs it.
 2. **Connect** (button at the top of the project) shows the **Project URL** and the **publishable** key (`sb_publishable_…`; also under **Project Settings → API Keys**). Send me both. Never the secret key.
 3. **Authentication → Sign In / Providers → Email**: switch **Confirm email** off (Supabase's own mail only reaches you, so nobody else could confirm).
-4. **SQL Editor**: paste all of `supabase/migrations/20261117000001_groups.sql`, Run. Then paste all of `supabase/tests/rls.sql`, Run: the last line must say `PASS: 66 checks`.
+4. **SQL Editor**: paste all of `supabase/migrations/20261117000001_groups.sql`, Run. Then all of `supabase/migrations/20261118000001_plans.sql`, Run. Then paste all of `supabase/tests/rls.sql`, Run: the last line must say `PASS: 91 checks`.
 5. **Authentication → Hooks → Before User Created → Postgres**: schema `public`, function `hook_require_invite`, save. Now sign-ups without a code are refused.
 6. **SQL Editor**: run snippet 1 of `supabase/owner-snippets.sql`. It prints your own invite code. In the app: Groups → I have an invite code.
 7. Make a group, tap **Invite friends**, send the code.
 
 **Turning it on** (me, after step 2): put the URL and key in `config.js`, put the exact project URL in `connect-src` in `index.html` instead of `https://*.supabase.co`, push.
 
-**Owner jobs** (`supabase/owner-snippets.sql`, one snippet at a time in the SQL Editor): a new invite code; a new password for someone who forgot theirs; read reports; remove a post; see everyone; remove someone completely.
+**A new SQL file later** (shared plans were the first, 18 Nov): the SQL goes onto the real project **before** the app that needs it is pushed. The other way round, the live app asks the server for something it doesn't have yet and Groups shows an error. New SQL only ever adds things, so the app already live keeps working in between.
+
+**Owner jobs** (`supabase/owner-snippets.sql`, one snippet at a time in the SQL Editor): a new invite code; a new password for someone who forgot theirs; read reports; remove a post; see everyone; remove someone completely; read reported plans; remove a shared plan; list every shared plan.
 
 **Testing locally:** Colima + Docker + the Supabase CLI are installed on Keli's Mac.
 
@@ -171,6 +178,8 @@ docker exec -i supabase_db_coaching-app psql -U postgres -d postgres < supabase/
 
 - One phone, no backup, no way for the coach to see logs remotely. Fine while the coach sees him every week.
 - One goal per app for now (`PLAN_URL` in `app.js`). A client with a different goal needs a way to pick the plan file, probably a per-client link.
-- Reps and seconds only, no kg.
+- Weights are in kg only, and the iPhone's number pad can't type a minus (band help).
+- The ladder (goal) comes from the coach's file for every plan, his own included.
+- Shared plans: a copy saved from the marketplace doesn't follow later changes to the original; plans can't carry a target weight; the marketplace shows the newest 50 and searches by name only.
 - **Groups:** a free Supabase project pauses after a week nobody opens Groups; Groups then says it can't be reached until Keli un-pauses it in the dashboard (logging is never affected). No emails, so a forgotten password is reset by Keli with a snippet. No videos yet (Step 4: about 40 clips of 20 seconds fit the free 1 GB). No followers yet (Step 3). Posts can't be edited, only deleted. New posts show when Groups is opened or its tab tapped again, not live.
 - Every app on `keli69420.github.io` shares one browser storage, so the sign-in there could be read by Keli's other apps. Fine while they're all his; an own domain before Groups goes public.

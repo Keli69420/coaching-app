@@ -8,13 +8,18 @@ import {
   LIMITS, cleanPlans, newPlan, addWeek, copyWeek, addDay, addItem, removeWeek, removeDay, removeItem, setItemField,
   findDay, findWeek, copyPlan, fromProgramPlan, checkPlan, planSummary, fmtItem, toProgramPlan,
 } from "./plans.js";
+import { registerPlans, findRowHtml, shareBlockHtml, planDeleted } from "./market.js";
+
+// Raised when this file gains something app.js or market.js need from it (2: shared plans).
+// app.js checks it, like LOGIC_V, so a copy saved by an older version is reloaded, not half-used.
+export const PAGES_V = 2;
 
 const KEY = "coach.plans";
 let ctx = null;
 let store = load();
 let shaped = null; // his plans in the shape the rest of the app reads, rebuilt after every change
 // Which plan's page is open (its id), whether it's being changed, and a line to show once on it.
-const P = { open: null, edit: false, note: "" };
+const P = { open: null, edit: false, note: "", before: "" };
 
 function load() {
   try { return cleanPlans(JSON.parse(localStorage.getItem(KEY) || "null")); } catch { return cleanPlans(null); }
@@ -40,6 +45,36 @@ export function ownPlans() {
   if (!shaped) shaped = store.plans.map(toProgramPlan);
   return shaped;
 }
+
+// What market.js needs of his plans: look one up, add a saved one, note what was shared, open a page.
+registerPlans({
+  get: (id) => store.plans.find((p) => p.id === id) ?? null,
+  bySrc: (src) => store.plans.find((p) => p.src === src) ?? null,
+  byPub: (pub) => store.plans.find((p) => p.pub === pub) ?? null,
+  add(plan) {
+    if (store.plans.length >= LIMITS.plans) return false;
+    store.plans.push(plan);
+    save();
+    return true;
+  },
+  // null removes a field.
+  patch(id, fields) {
+    const plan = store.plans.find((p) => p.id === id);
+    if (!plan) return;
+    for (const [k, v] of Object.entries(fields)) {
+      if (v == null || v === false) delete plan[k];
+      else plan[k] = v;
+    }
+    save();
+  },
+  open(id, note) {
+    P.open = id;
+    P.edit = false;
+    P.note = note || "";
+    ctx.render();
+    ctx.toTop();
+  },
+});
 
 export const planPageOpen = () => P.open != null;
 export function closePlanPage() { P.open = null; P.edit = false; P.note = ""; }
@@ -86,6 +121,7 @@ export function plansListHtml(heading = "Your plans") {
     <ul class="card rows">
       ${rows.join("")}
       ${full ? "" : `<li><button type="button" class="row add" data-act="p-new"><span class="gicon plus" aria-hidden="true">+</span><span class="rtext"><b>New plan</b></span></button></li>`}
+      ${findRowHtml()}
     </ul>
     ${full ? `<p class="foot">That's ${LIMITS.plans} plans, the most the app keeps. Delete one to make room.</p>` : ""}`;
 }
@@ -121,6 +157,10 @@ export function planPageHtml() {
         ${own ? `<button type="button" class="ghostbtn" data-act="p-edit">Edit</button>` : ""}
         <button type="button" class="ghostbtn plain" data-act="p-copy">${own ? "Duplicate" : "Copy to change it"}</button>
       </div>
+      ${own && !missing ? (own.by
+        // Someone else's plan, saved: his to use and change, not to hand on under his name.
+        ? `<p class="foot">Saved from ${esc(own.by)}. To share a version of your own, duplicate it first.</p>`
+        : shareBlockHtml(own)) : ""}
       ${weeks.map((w) => `
         <h3 class="pweekname">${esc(w.title)}</h3>
         ${w.days.length ? w.days.map((d) => `
@@ -256,6 +296,7 @@ export function plansClick(act, btn) {
   } else if (!plan) {
     // Everything below changes one of his own plans.
   } else if (act === "p-edit") {
+    P.before = JSON.stringify(plan); // to tell on Done whether anything changed
     P.edit = true;
     ctx.render();
     ctx.toTop();
@@ -263,12 +304,15 @@ export function plansClick(act, btn) {
     P.edit = false;
     // Read it back the way it's stored, so what he sees is what was kept (empty exercises go).
     const tidy = cleanPlans({ plans: [plan] }).plans[0];
+    // Shared already: the copy people see is now behind (market.js offers to update it).
+    if (tidy?.pub && JSON.stringify(tidy) !== P.before) tidy.stale = true;
     if (tidy) store.plans[store.plans.indexOf(plan)] = tidy;
     save();
     ctx.render();
     ctx.toTop();
   } else if (act === "p-delete") {
-    if (!ctx.armed(btn, "Tap again to delete")) return;
+    if (!ctx.armed(btn, plan.pub ? "Tap again: its shared copy goes too" : "Tap again to delete")) return;
+    planDeleted(plan);
     store.plans = store.plans.filter((p) => p !== plan);
     save();
     if (ctx.currentId() === plan.id) ctx.usePlan(null);

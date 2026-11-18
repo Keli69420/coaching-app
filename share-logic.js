@@ -40,6 +40,8 @@ export function cleanSnapshot(kind, s) {
     if (!skill) return null;
     return { skill, best: num(s.best), target: num(s.target), unit: unit(s.unit) };
   }
+  // A shared plan: its name and "4 weeks · 3 workouts a week". The plan itself is fetched when opened.
+  if (kind === "plan") return { title: str(s.title, 60).trim() || "Plan", summary: str(s.summary, 140).trim() };
   if (kind !== "activity") return null;
   const records = Array.isArray(s.records) ? s.records : [];
   return {
@@ -58,9 +60,11 @@ export function cleanSnapshot(kind, s) {
 
 export function cleanPost(raw) {
   if (!isObj(raw) || !UUID.test(raw.id)) return null;
-  const kind = raw.kind === "activity" || raw.kind === "skill" ? raw.kind : null;
+  const kind = raw.kind === "activity" || raw.kind === "skill" || raw.kind === "plan" ? raw.kind : null;
   const snap = kind && cleanSnapshot(kind, raw.snapshot);
   if (!snap) return null;
+  const planId = kind === "plan" && UUID.test(raw.plan_id ?? "") ? raw.plan_id : null;
+  if (kind === "plan" && !planId) return null;
   const at = Date.parse(raw.created_at);
   const a = raw.author;
   return {
@@ -68,6 +72,7 @@ export function cleanPost(raw) {
     kind,
     audience: raw.audience === "everyone" ? "everyone" : "group",
     groupId: UUID.test(raw.group_id ?? "") ? raw.group_id : null,
+    planId,
     caption: str(typeof raw.caption === "string" ? raw.caption : "", CAPTION_MAX).replace(/\n{3,}/g, "\n\n").trim(),
     at: Number.isFinite(at) ? at : 0,
     // Empty when the author is someone he can no longer see (they left the group).
@@ -155,6 +160,8 @@ export function refusal(body) {
     "too many posts": "You've shared a lot this hour. Try again later.",
     "too many groups": "You already have 10 groups of your own.",
     "too many reports": "You've reported a lot today. Try again tomorrow.",
+    "too many plans": "You have 30 shared plans, the most there is room for. Remove one first.",
+    "too many plans today": "You've shared a lot of plans today. Try again tomorrow.",
     "group name": `Give the group a name, up to ${NAME_MAX} characters.`,
     "not the owner": "Only the group's owner can do that.",
   }[m] || "";

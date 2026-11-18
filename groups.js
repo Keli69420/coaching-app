@@ -16,7 +16,7 @@ let ctx;
 export function initGroups(c) { ctx = c; }
 const esc = (s) => ctx.esc(s);
 
-const POSTS = "id,kind,audience,group_id,caption,snapshot,created_at,author:profiles(id,name)";
+const POSTS = "id,kind,audience,group_id,plan_id,caption,snapshot,created_at,author:profiles(id,name)";
 const FEED_MAX = 30;
 export const GROUP_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8.5" r="3.5"/><path d="M2.5 19.5c.9-3.4 3.4-5.2 6.5-5.2s5.6 1.8 6.5 5.2"/><path d="M15.5 5.3a3.5 3.5 0 0 1 0 6.4M17.6 14.6c2 .7 3.3 2.4 3.9 4.9"/></svg>`;
 
@@ -213,6 +213,13 @@ function postHtml(p, preview = false) {
       <span class="skilltag">${ctx.TICK}Skill unlocked</span>
       <span class="acttitle">${esc(s.skill)}</span>
       ${s.best != null ? `<span class="actstats">${stat("Best", `${s.best}${u}`, "lime")}${s.target != null ? stat("Goal", `${s.target}${u}`, "pink") : ""}</span>` : ""}`;
+  } else if (p.kind === "plan") {
+    // A shared plan: its name and size; the plan itself opens on its own page (market.js).
+    body = `
+      <span class="skilltag plantag">Plan</span>
+      <span class="acttitle">${esc(s.title)}</span>
+      ${s.summary ? `<span class="psum">${esc(s.summary)}</span>` : ""}
+      ${preview ? "" : `<button type="button" class="ghostbtn" data-act="m-view" data-plan="${p.planId}">View plan</button>`}`;
   } else {
     body = `
       <span class="acttitle">${esc(s.title)}</span>
@@ -245,8 +252,9 @@ export const sharing = () => Boolean(G.share);
 export const stopShare = () => { G.share = null; };
 
 // Always opens on a group, never on Everyone: Everyone is a tap of its own each time.
-export function startShare(kind, snap) {
-  G.share = { kind, snap, audience: null, caption: "", sending: false };
+// `extra` goes into the post as it is: the plan's id when a plan is shared.
+export function startShare(kind, snap, extra = {}) {
+  G.share = { kind, snap, extra, audience: null, caption: "", sending: false };
   if (me()) {
     if (G.groups?.length) G.share.audience = G.groups[0].id;
     load();
@@ -621,7 +629,7 @@ async function post(btn) {
     await rest("posts", {
       method: "POST",
       headers: { Prefer: "return=minimal" },
-      body: { kind: sh.kind, audience: everyone ? "everyone" : "group", group_id: everyone ? null : sh.audience, snapshot: sh.snap, caption: sh.caption.trim() },
+      body: { ...sh.extra, kind: sh.kind, audience: everyone ? "everyone" : "group", group_id: everyone ? null : sh.audience, snapshot: sh.snap, caption: sh.caption.trim() },
     });
   } catch (e) {
     sh.sending = false;

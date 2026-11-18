@@ -27,3 +27,19 @@ order by u.created_at desc;
 
 -- 6. Remove someone completely (their profile, groups they're in, posts).
 delete from auth.users where email = 'THEIR@EMAIL';
+
+-- 7. Reported plans, newest first.
+select r.created_at as reported, r.reason, a.name as author, p.title, p.listed, p.id as plan_id
+from private.plan_reports r
+join public.plans p on p.id = r.plan_id
+join public.profiles a on a.id = p.author
+order by r.created_at desc;
+
+-- 8. Remove a shared plan (copy its plan_id from snippet 7). Its posts go with it.
+--    The author keeps their own copy on their phone; only the shared one is gone.
+delete from public.plans where id = 'PLAN-ID';
+
+-- 9. Every shared plan, newest first, and whether it's in the marketplace.
+select p.created_at, a.name as author, p.title, p.summary, p.listed, p.id as plan_id
+from public.plans p join public.profiles a on a.id = p.author
+order by p.created_at desc;
