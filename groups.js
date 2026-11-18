@@ -3,6 +3,7 @@
 // decided by the server's rules (supabase/migrations); this file only draws and asks.
 // Server calls are in social.js, the pure parts in share-logic.js (tested).
 
+import { cleanTier, groupBlock, limitText } from "./coach-logic.js";
 import { configured, me, rest, rpc, signUp, signIn, signOut, forget, errText, NetError } from "./social.js";
 import {
   cleanPost, cleanGroup, cleanMember, cleanCode, fmtCode, timeAgo, checkJoin, joinError, refusal, CAPTION_MAX, NAME_MAX,
@@ -135,6 +136,7 @@ function groupHtml() {
   const n = g.members?.length;
   return `
     ${back("g-home", "Groups")}
+    ${g.kind === "coaching" ? `<p class="eyebrow">Coaching group</p>` : ""}
     ${head(g.name, n ? ctx.count(n, "member", "members") : "")}
     ${noteLine()}${errBox()}
     ${g.owner ? inviteHtml(g) : ""}
@@ -306,12 +308,26 @@ function audienceHtml() {
 
 export const accountValue = () => (me() ? "Signed in" : "Not signed in");
 
+// Asking to become a coach is remembered on this phone, so the button stays "Requested".
+const REQ_KEY = "pathletics.coachRequested";
+const requested = () => { try { return localStorage.getItem(REQ_KEY) === "1"; } catch { return false; } };
+
+function coachHtml() {
+  if ((ctx.myTier?.() ?? "free") === "coach") return `<div class="card group"><div class="grow"><span>Coach</span></div></div>`;
+  const asked = requested();
+  return `
+    <div class="card group"><div class="grow"><span>Coach</span><span class="val">${asked ? "Requested" : "Free"}</span></div></div>
+    <p class="foot">Coaches build unlimited plans and run coaching groups of up to 50.</p>
+    ${asked ? "" : `<button type="button" class="sharebtn" data-act="g-coach">Register as coach</button>`}`;
+}
+
 export function accountHtml() {
   const u = me();
   if (!u) return `<div class="card info"><p>You're not signed in to Groups. Your workouts don't need an account.</p></div>
     <button type="button" class="cta" data-act="g-gogroups">Go to Groups</button>`;
   return `
     <div class="card group"><div class="grow"><span>Email</span><span class="val">${esc(u.email)}</span></div></div>
+    ${coachHtml()}
     <button type="button" class="sharebtn" data-act="g-signout">Sign out</button>
     <button type="button" class="quiet danger" data-act="g-deleteacct">Delete account</button>
     <p class="foot">Deleting your account deletes your posts and takes you out of every group. Your workouts on this phone stay.</p>`;
@@ -335,6 +351,7 @@ function redraw() {
 function failed(e) {
   if (e?.kind === "auth") {
     forget();
+    ctx.setTier?.("free");
     G = { ...fresh(), view: "signin", note: "Please sign in again." };
   } else {
     G.error = errText(e);
@@ -361,7 +378,7 @@ async function load() {
   G.error = "";
   try {
     const uid = me().id;
-    const [prof] = await rest(`profiles?select=id,name,avatar&id=eq.${uid}`);
+    const [prof] = await rest(`profiles?select=id,name,avatar,tier&id=eq.${uid}`);
     if (n !== seqHome) return;
     if (!prof) {
       G.profile = null;
@@ -371,12 +388,17 @@ async function load() {
     }
     G.profile = { id: prof.id, name: prof.name };
     adoptProfile(prof);
+    ctx.setTier?.(cleanTier(prof.tier));
     const [mem, feed] = await Promise.all([
-      rest(`group_members?select=role,group:groups(id,name)&user_id=eq.${uid}&order=joined_at.desc`),
+      rest(`group_members?select=role,group:groups(id,name,kind)&user_id=eq.${uid}&order=joined_at.desc`),
       rest(`posts?select=${POSTS}&audience=eq.everyone&order=created_at.desc&limit=${FEED_MAX}`),
     ]);
     if (n !== seqHome) return;
-    G.groups = (mem || []).map(cleanGroup).filter(Boolean);
+    G.groups = (mem || []).map((r) => {
+      const g = cleanGroup(r);
+      if (g) g.kind = r.group?.kind === "coaching" ? "coaching" : "friends";
+      return g;
+    }).filter(Boolean);
     G.feed = (feed || []).map(cleanPost).filter(Boolean);
     if (G.view === "code") G.view = "home";
     if (G.share && !G.share.audience && G.groups.length) G.share.audience = G.groups[0].id;
@@ -390,7 +412,7 @@ async function load() {
 async function openGroup(g) {
   if (!g) return;
   G.view = "group";
-  G.group = { id: g.id, name: g.name, owner: g.owner, posts: null, members: null, code: G.group?.id === g.id ? G.group.code : null };
+  G.group = { id: g.id, name: g.name, kind: g.kind || "friends", owner: g.owner, posts: null, members: null, code: G.group?.id === g.id ? G.group.code : null };
   redraw();
   ctx.toTop();
   const n = ++seqGroup;
@@ -398,7 +420,7 @@ async function openGroup(g) {
     const [posts, mem, info] = await Promise.all([
       rest(`posts?select=${POSTS}&group_id=eq.${g.id}&order=created_at.desc&limit=${FEED_MAX}`),
       rest(`group_members?select=role,user:profiles(id,name)&group_id=eq.${g.id}&order=joined_at`),
-      rest(`groups?select=id,name&id=eq.${g.id}`), // its name, also when he came in by a code
+      rest(`groups?select=id,name,kind&id=eq.${g.id}`), // its name, also when he came in by a code
     ]);
     if (n !== seqGroup || G.group?.id !== g.id) return;
     const members = (mem || []).map(cleanMember).filter(Boolean);
@@ -411,6 +433,7 @@ async function openGroup(g) {
     }
     Object.assign(G.group, {
       name: cleanGroup({ group: info?.[0] })?.name || G.group.name,
+      kind: info?.[0]?.kind === "coaching" ? "coaching" : "friends",
       posts: (posts || []).map(cleanPost).filter(Boolean),
       members,
       owner: members.some((m) => m.id === me().id && m.owner),
@@ -468,7 +491,10 @@ async function push(p) {
 
 /* ---------- forms ---------- */
 
-const words = (e) => (e?.kind === "bad" ? refusal(e.body) || errText(e) : errText(e));
+// The server's 'too many groups' gets the same sentence as the check before it, for his tier.
+const words = (e) => (e?.kind === "bad"
+  ? (e.body?.message === "too many groups" ? limitText("groups", (ctx.myTier?.() ?? "free")) : refusal(e.body) || errText(e))
+  : errText(e));
 
 export async function groupsSubmit(form) {
   const f = Object.fromEntries(new FormData(form));
@@ -502,6 +528,8 @@ export async function groupsSubmit(form) {
       load();
     } else if (which === "newgroup") {
       const name = String(f.name).trim();
+      const owned = (G.groups || []).filter((g) => g.owner).length;
+      if (groupBlock((ctx.myTier?.() ?? "free"), owned)) { say(limitText("groups", (ctx.myTier?.() ?? "free"))); done(); return; }
       const id = await rpc("create_group", { p_name: name });
       G.note = "Group made. Invite your friends with its code.";
       await openGroup({ id, name, owner: true });
@@ -557,6 +585,7 @@ export async function groupsClick(act, btn) {
   if (act === "g-aud") { G.share.audience = btn.dataset.aud; redraw(); return; }
   if (act === "g-signout") {
     signOut();
+    ctx.setTier?.("free");
     G = fresh();
     ctx.render();
     return;
@@ -595,11 +624,20 @@ export async function groupsClick(act, btn) {
       to("home");
       G.note = `You left ${name}.`;
       load();
+    } else if (act === "g-coach") {
+      btn.disabled = true;
+      const r = await rpc("request_coach");
+      if (r === "coach") ctx.setTier?.("coach");
+      else {
+        try { localStorage.setItem(REQ_KEY, "1"); } catch { /* shown as requested until reload */ }
+        btn.textContent = "Requested";
+      }
     } else if (act === "g-deleteacct") {
       if (!ctx.armed(btn, "Tap again to delete your account")) return;
       btn.disabled = true;
       await rpc("delete_my_account");
       forget();
+      ctx.setTier?.("free");
       G = { ...fresh(), note: "Your account and posts are deleted." };
       ctx.render();
     } else if (act === "g-post") {

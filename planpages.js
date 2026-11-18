@@ -8,18 +8,19 @@ import {
   LIMITS, cleanPlans, newPlan, addWeek, copyWeek, addDay, addItem, removeWeek, removeDay, removeItem, setItemField,
   findDay, findWeek, copyPlan, fromProgramPlan, checkPlan, planSummary, fmtItem, toProgramPlan,
 } from "./plans.js";
+import { planBlock, limitText } from "./coach-logic.js";
 import { registerPlans, findRowHtml, shareBlockHtml, planDeleted } from "./market.js";
 
 // Raised when this file gains something app.js or market.js need from it (2: shared plans).
 // app.js checks it, like LOGIC_V, so a copy saved by an older version is reloaded, not half-used.
-export const PAGES_V = 2;
+export const PAGES_V = 3;
 
 const KEY = "coach.plans";
 let ctx = null;
 let store = load();
 let shaped = null; // his plans in the shape the rest of the app reads, rebuilt after every change
 // Which plan's page is open (its id), whether it's being changed, and a line to show once on it.
-const P = { open: null, edit: false, note: "", before: "" };
+const P = { open: null, edit: false, note: "", warn: "", before: "", limit: "" };
 
 function load() {
   try { return cleanPlans(JSON.parse(localStorage.getItem(KEY) || "null")); } catch { return cleanPlans(null); }
@@ -48,6 +49,7 @@ export function ownPlans() {
 
 // What market.js needs of his plans: look one up, add a saved one, note what was shared, open a page.
 registerPlans({
+  all: () => store.plans,
   get: (id) => store.plans.find((p) => p.id === id) ?? null,
   bySrc: (src) => store.plans.find((p) => p.src === src) ?? null,
   byPub: (pub) => store.plans.find((p) => p.pub === pub) ?? null,
@@ -77,7 +79,14 @@ registerPlans({
 });
 
 export const planPageOpen = () => P.open != null;
-export function closePlanPage() { P.open = null; P.edit = false; P.note = ""; }
+export function closePlanPage() { P.open = null; P.edit = false; P.note = ""; P.warn = ""; P.limit = ""; }
+
+// A line to show when his tier's plan limit stops him adding one more, or "" when there's room.
+function blocked(kind) {
+  const tier = (ctx.myTier?.() ?? "free");
+  const code = planBlock(tier, store.plans, kind);
+  return code ? limitText(code, tier) : "";
+}
 
 const mine = (id) => store.plans.find((p) => p.id === id) ?? null;
 const fromFile = (id) => ctx.filePlans().find((p) => p.id === id) ?? null;
@@ -116,6 +125,8 @@ export function plansListHtml(heading = "Your plans") {
     ...store.plans.map((p) => row(p.id, planLabel(p.id), p.by ? `${planSummary(p)} · by ${p.by}` : planSummary(p))),
   ];
   const full = store.plans.length >= LIMITS.plans;
+  const limit = P.limit;
+  P.limit = "";
   return `
     <h2 class="sect">${esc(heading)}</h2>
     <ul class="card rows">
@@ -123,6 +134,7 @@ export function plansListHtml(heading = "Your plans") {
       ${full ? "" : `<li><button type="button" class="row add" data-act="p-new"><span class="gicon plus" aria-hidden="true">+</span><span class="rtext"><b>New plan</b></span></button></li>`}
       ${findRowHtml()}
     </ul>
+    ${limit ? `<p class="formerr" role="alert">${esc(limit)}</p>` : ""}
     ${full ? `<p class="foot">That's ${LIMITS.plans} plans, the most the app keeps. Delete one to make room.</p>` : ""}`;
 }
 
@@ -140,7 +152,9 @@ export function planPageHtml() {
     ? own.weeks.map((w) => ({ title: w.title, days: w.days.map((d) => ({ title: d.title, items: d.items.filter((it) => it.name.trim()).map((it) => ({ name: it.name, rx: fmtItem(it) })) })) }))
     : file.weeks.map((w) => ({ title: w.title, days: w.days.map((d) => ({ title: d.title, items: d.items.map((it) => ({ name: it.name, rx: it.sets.length ? ctx.fmtPrescription(it) : "" })) })) }));
   const note = P.note;
+  const warn = P.warn;
   P.note = "";
+  P.warn = "";
   return `
     <section class="planpage">
       <button type="button" class="back" data-act="p-back">${LEFT}<span>Plan</span></button>
@@ -149,6 +163,7 @@ export function planPageHtml() {
         <h2 class="title">${esc(planLabel(P.open))}</h2>
         <p class="psum">${esc(own ? planSummary(own) : fileSummary(file))}</p>
       </header>
+      ${warn ? `<p class="formerr" role="alert">${esc(warn)}</p>` : ""}
       ${note ? `<p class="gnote" role="status">${esc(note)}</p>` : ""}
       ${isCurrent ? `<p class="gnote">This is the plan you're on.</p>`
         : `<button type="button" class="cta" data-act="p-use"${missing ? " disabled" : ""}>Use this plan</button>
@@ -268,6 +283,9 @@ export function plansClick(act, btn) {
     ctx.toTop();
   } else if (act === "p-new") {
     if (store.plans.length >= LIMITS.plans) return;
+    const stop = blocked("built");
+    if (stop) { P.limit = stop; ctx.render(); return; }
+    P.limit = "";
     const fresh = newPlan();
     store.plans.push(fresh);
     save();
@@ -276,7 +294,9 @@ export function plansClick(act, btn) {
     ctx.render();
     ctx.toTop();
   } else if (act === "p-copy") {
-    if (store.plans.length >= LIMITS.plans) { P.note = `You have ${LIMITS.plans} plans, the most the app keeps. Delete one first.`; ctx.render(); return; }
+    if (store.plans.length >= LIMITS.plans) { P.warn = `You have ${LIMITS.plans} plans, the most the app keeps. Delete one first.`; ctx.render(); return; }
+    const stop = blocked("built");
+    if (stop) { P.warn = stop; ctx.render(); return; }
     const file = plan ? null : fromFile(P.open);
     const copy = plan ? copyPlan(plan, { title: `${plan.title.trim() || "My plan"} copy`.slice(0, LIMITS.title) })
       : file ? fromProgramPlan(file, { title: `${planLabel(file.id)} copy` }) : null;

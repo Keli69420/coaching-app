@@ -98,6 +98,6 @@ test("a plan in a post: needs its plan, and reads like the other posts", () => {
   assert.deepEqual(p.snap, { title: "Gym basics", summary: "1 week · 1 workout" });
   assert.equal(cleanPost({ ...raw, plan_id: null }), null);
   assert.equal(cleanPost({ ...raw, kind: "activity" }).planId, null);
-  assert.match(refusal({ message: "too many plans" }), /30 shared plans/);
+  assert.match(refusal({ message: "too many plans" }), /as many plans as your account allows/);
   assert.match(refusal({ message: "too many plans today" }), /tomorrow/);
 });

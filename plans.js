@@ -13,7 +13,7 @@
 
 import { keyOf, sessionsOf } from "./logic.js";
 
-export const LIMITS = { plans: 30, weeks: 12, days: 7, items: 15, sets: 10, amount: 999, title: 40, name: 40, note: 80 };
+export const LIMITS = { plans: 100, weeks: 12, days: 7, items: 15, sets: 10, amount: 999, title: 40, name: 40, note: 80 };
 
 const ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
 const ID = /^[a-z][a-z0-9]{6,12}$/;

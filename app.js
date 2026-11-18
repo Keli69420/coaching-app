@@ -18,6 +18,7 @@ import * as PAGES from "./planpages.js";
 import { initMarket, marketOpen, closeMarket, marketHtml, marketClick, marketSubmit } from "./market.js";
 import { AVATAR_PX, cropRect, cleanAvatar } from "./picture.js";
 import { activitySnapshot, skillSnapshot } from "./share-logic.js";
+import { cleanTier } from "./coach-logic.js";
 import {
   groupsOn, initGroups, groupsHtml, groupsClick, groupsSubmit, groupsInput, enterGroups,
   sharing, stopShare, startShare, shareHtml, accountHtml, accountValue, profileChanged,
@@ -32,6 +33,8 @@ const PREFS_KEY = "coach.prefs";
 // His profile picture, a small square JPEG, on this phone only. Apart from the settings so the
 // theme script at the top of index.html doesn't have to read it on every start.
 const AVATAR_KEY = "coach.avatar";
+// His tier ("free" or "coach") as the server last said, so the limits hold with no signal.
+const TIER_KEY = "pathletics.tier";
 const SAVE_DELAY_MS = 300;
 const ARMED_MS = 3000; // how long a "tap again to…" button waits for the second tap
 // How far back the Progress tab looks: from his first logged week, at least 4 weeks, at most 8,
@@ -55,7 +58,7 @@ const oldPage = !meEl || !pagesEl?.querySelector('[data-page="groups"]');
 // An older logic.js doesn't know about weights and would drop them from his logs on loading.
 const oldLogic = !(LOGIC.LOGIC_V >= 2);
 // An older planpages.js works, but without shared plans; a reload brings the new one.
-const oldPages = !(PAGES.PAGES_V >= 2);
+const oldPages = !(PAGES.PAGES_V >= 3);
 if (oldPage || oldLogic || oldPages) {
   let again = false;
   try {
@@ -95,6 +98,15 @@ let pending = false;
 let timer = null;
 
 /* ---------- storage: this phone only ---------- */
+
+// Free until the server says coach; signed out is free too (groups.js resets it).
+let tier = "free";
+try { tier = cleanTier(localStorage.getItem(TIER_KEY)); } catch { /* no storage: free */ }
+function myTier() { return tier; }
+function setTier(t) {
+  tier = cleanTier(t);
+  try { localStorage.setItem(TIER_KEY, tier); } catch { /* kept in memory only */ }
+}
 
 function load() {
   try {
@@ -201,7 +213,12 @@ const dayWord = (iso) => {
 const capital = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
 // The coach's plans from the file, then his own (made in the app or saved from someone, planpages.js).
-const allPlans = () => [...(program?.plans ?? []), ...ownPlans()];
+// The coach's program plans (from the file) stay only for a phone already on one: it's the
+// current plan, or it holds logs for one of its workouts. A new phone sees none of them.
+const keptProgram = () => (program?.plans ?? []).filter((p) => p.id === state.plan || sessionsOfAny(p).some((s) => state.logs[s.key]));
+const allPlans = () => [...keptProgram(), ...ownPlans()];
+// True while the plan he's on is one of the program's (the Ladder belongs to those only).
+const onProgram = () => Boolean(plan() && (program?.plans ?? []).some((p) => p.id === state.plan));
 // The plan he's on. One with no workouts in it (his own, emptied) counts as none.
 const plan = () => {
   const p = allPlans().find((x) => x.id === state.plan);
@@ -435,6 +452,7 @@ function ring(share) {
 // Three separate rings, never nested: nested red/green/blue rings are Apple's Activity
 // rings, and Apple asks apps not to imitate them. Pink = the step he's on, lime = done.
 function ladderHtml() {
+  if (!onProgram()) return "";
   const { steps, current: at, finished } = ladderState(program.ladder, state.logs, state.tests);
   if (!steps.length) return "";
   const tiles = steps.map((s, i) => {
@@ -649,7 +667,7 @@ const PAGE_NAMES = { today: "Today", plan: "Plan", progress: "Progress", groups:
 
 function profileHtml() {
   const all = allTimeTotals(everySession(), state.logs);
-  const steps = ladderState(program.ladder, state.logs, state.tests).steps;
+  const steps = onProgram() ? ladderState(program.ladder, state.logs, state.tests).steps : [];
   const goal = steps.length ? steps[steps.length - 1].name : "";
   const sub = [goal && `Goal: ${goal}`, all.since && `since ${fmtDate(all.since)}`].filter(Boolean).join(" · ");
   const acts = activities(everySession(), state.logs);
@@ -1109,7 +1127,8 @@ function goGroups(quiet = false) {
 }
 // Switch to a plan (null: back to the coach's, when there's just the one). False when it can't be used.
 function usePlan(id) {
-  if (id == null) id = program?.plans.length === 1 ? program.plans[0].id : null;
+  // No plan chosen: back to the coach's plan if he's on it or has logs from it, as before.
+  if (id == null && keptProgram().length === 1) id = keptProgram()[0].id;
   const p = id == null ? null : allPlans().find((x) => x.id === id);
   if (id != null && !(p && sessionsOfAny(p).length)) return false;
   state.plan = id;
@@ -1128,11 +1147,12 @@ function goPlan() {
   render();
 }
 
-initMarket({ esc, LEFT, RIGHT, armed, render, toTop, avatarHtml, goPlan, goGroups: () => goGroups() });
+initMarket({ myTier, esc, LEFT, RIGHT, armed, render, toTop, avatarHtml, goPlan, goGroups: () => goGroups() });
 
 initPlans({
   esc, LEFT, RIGHT, TICK, armed, render, toTop, fmtPrescription, usePlan,
-  filePlans: () => program?.plans ?? [],
+  filePlans: keptProgram,
+  myTier,
   currentId: () => state.plan,
   status: (t) => { statusEl.textContent = t; },
 });
@@ -1140,6 +1160,8 @@ initPlans({
 initGroups({
   esc, LEFT, RIGHT, TICK, MEDAL, PERSON, count, numHtml, recHtml, fmtDuration, armed, render, toTop, goGroups, avatarHtml,
   page: () => page,
+  myTier,
+  setTier(t) { const was = tier; setTier(t); if (tier !== was) render(); },
   myName: () => prefs.name.trim(),
   setName: (n) => { prefs.name = String(n).slice(0, 40); savePrefs(); drawMe(); },
   myAvatar: () => avatar,
@@ -1187,11 +1209,6 @@ async function start() {
     if (!res.ok) throw new Error(String(res.status));
     program = parsePlan(await res.text());
     if (state.plan && !allPlans().some((p) => p.id === state.plan)) state.plan = null;
-    // Only one plan in the file: it's his, no picking needed.
-    if (!state.plan && !program.errors.length && program.plans.length === 1) {
-      state.plan = program.plans[0].id;
-      persist();
-    }
   } catch {
     loadError = "Couldn't load the plan. Open the app once with internet.";
   }

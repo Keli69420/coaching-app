@@ -7,6 +7,7 @@
 
 import { configured, me, rest, rpc, errText } from "./social.js";
 import { refusal, timeAgo } from "./share-logic.js";
+import { planBlock, limitText } from "./coach-logic.js";
 import { cleanAvatar } from "./picture.js";
 import { fmtItem } from "./plans.js";
 import { startShare } from "./groups.js";
@@ -18,7 +19,7 @@ const LIST = "id,title,summary,listed,created_at,updated_at,author:profiles(id,n
 const LIST_MAX = 50;
 
 let ctx = null;
-let plans = null; // from planpages.js: get(id), add(plan), patch(id, fields), bySrc(id), open(id, note)
+let plans = null; // from planpages.js: all(), get(id), add(plan), patch(id, fields), bySrc(id), open(id, note)
 export function initMarket(c) { ctx = c; }
 export function registerPlans(p) { plans = p; }
 
@@ -292,7 +293,10 @@ export async function marketClick(act, btn) {
     if (me() && M.list == null) loadList();
   } else if (act === "m-save") {
     if (!M.plan) return;
-    if (!plans.add(M.plan)) { M.error = "You have 30 plans, the most the app keeps. Delete one first."; ctx.render(); return; }
+    const tier = (ctx.myTier?.() ?? "free");
+    const code = planBlock(tier, plans.all(), "saved");
+    if (code) { M.error = limitText(code, tier); ctx.render(); return; }
+    if (!plans.add(M.plan)) { M.error = "You have 100 plans, the most an account can keep. Delete one first."; ctx.render(); return; }
     const id = M.plan.id;
     closeMarket();
     ctx.goPlan();

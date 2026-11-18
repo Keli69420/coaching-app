@@ -1,5 +1,5 @@
 -- Pathletics Groups: checks that the rules hold. Paste into the Supabase SQL editor and press Run.
--- It makes four made-up people, tries everything they should and shouldn't be able to do, then
+-- It makes four made-up people (and some fillers for the full-group checks), tries everything they should and shouldn't be able to do, then
 -- deletes them again. The last line says PASS. On a failure it stops with "FAIL: <what went wrong>"
 -- and nothing it made is kept.
 
@@ -17,6 +17,10 @@ declare
   pl uuid; -- a's plan
   pl2 uuid; -- b's plan
   pp uuid; -- a's post of his plan to the group
+  g2 uuid; -- a's coaching group
+  gf uuid; -- a friends group with 10 people
+  gc uuid; -- a coaching group with 10 people
+  gk uuid; -- a's coaching group that b takes over
   px uuid; -- c's post of a's plan, once it's listed
   r jsonb;
   n int;
@@ -82,6 +86,20 @@ begin
   perform set_config('request.jwt.claims', json_build_object('sub', a, 'role', 'authenticated')::text, true);
   g := public.create_group('Bar crew');
   assert private.is_owner(g), 'a does not own the new group';
+  assert (select kind from public.groups where id = g) = 'friends', 'a free member''s group is not a friends group';
+  begin perform public.create_group('Second'); assert false, 'a free member made a second group';
+  exception when raise_exception then
+    assert sqlerrm = 'too many groups', 'wrong refusal: ' || sqlerrm; checks := checks + 1; end;
+  assert (select tier from public.profiles where id = a) = 'free', 'a does not start on free';
+  begin update public.profiles set tier = 'coach' where id = a; assert false, 'a made himself a coach';
+  exception when insufficient_privilege then checks := checks + 1; end;
+  begin update public.groups set kind = 'coaching' where id = g; assert false, 'a made his group a coaching group';
+  exception when insufficient_privilege then checks := checks + 1; end;
+  assert public.request_coach() = 'requested', 'asking to be a coach did not say requested';
+  assert public.request_coach() = 'requested', 'asking twice did not say requested';
+  begin perform 1 from private.coach_requests; assert false, 'a read the coach requests';
+  exception when insufficient_privilege then checks := checks + 1; end;
+  checks := checks + 4;
   k := public.group_invite(g);
   assert k ~ '^[A-HJKMNP-Z2-9]{8}$', 'odd invite code ' || coalesce(k, 'none');
   assert public.group_invite(g) = k, 'asking twice made a second code';
@@ -151,8 +169,16 @@ begin
   perform public.report_post(pe, 'again'); -- a second report of the same post is ignored
   checks := checks + 10;
 
+  -- Keli approves a as a coach (as the database owner); the plan checks below need more than one plan.
+  reset role;
+  update public.profiles set tier = 'coach' where id = a;
+  delete from private.coach_requests where user_id = a;
+  perform set_config('role', 'authenticated', true);
+
   -- Plans (20261118000001_plans.sql). a makes one: until it's listed or posted, it's his alone.
   perform set_config('request.jwt.claims', json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  assert public.request_coach() = 'coach', 'a coach asking to be a coach did not say coach';
+  checks := checks + 1;
   insert into public.plans (title, summary, body) values ('Test plan', '1 week', '{"weeks":[]}') returning id into pl;
   begin insert into public.plans (author, title, body) values (b, 'x', '{}'); assert false, 'a made a plan as b';
   exception when insufficient_privilege then checks := checks + 1; end;
@@ -199,6 +225,9 @@ begin
   exception when insufficient_privilege then checks := checks + 1; end;
   perform set_config('request.jwt.claims', json_build_object('sub', b, 'role', 'authenticated')::text, true);
   insert into public.plans (title, body, listed) values ('b''s plan', '{}', true) returning id into pl2;
+  begin insert into public.plans (title, body) values ('b''s second', '{}'); assert false, 'a free member shared a second plan';
+  exception when raise_exception then
+    assert sqlerrm = 'too many plans', 'wrong refusal: ' || sqlerrm; checks := checks + 1; end;
   perform set_config('request.jwt.claims', json_build_object('sub', c, 'role', 'authenticated')::text, true);
   assert exists (select 1 from public.plans where id = pl), 'c cannot see a listed plan';
   assert exists (select 1 from public.profiles where id = b), 'c cannot see who made a listed plan';
@@ -244,7 +273,56 @@ begin
     assert false, 'no limit on posts an hour';
   exception when raise_exception then checks := checks + 1; end;
 
-  -- a, the owner, removes b's post, then leaves: b takes over the group.
+  -- Coach tier. a (a coach now) gets coaching groups, up to 10 of any kind; his friends group g stays as it was.
+  perform set_config('request.jwt.claims', json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  g2 := public.create_group('Squad');
+  assert (select kind from public.groups where id = g2) = 'coaching', 'a coach''s group is not a coaching group';
+  assert (select kind from public.groups where id = g) = 'friends', 'the coach''s old group changed kind';
+  for i in 1..8 loop perform public.create_group('Squad ' || i); end loop; -- with g and g2 that is 10
+  begin perform public.create_group('Eleventh'); assert false, 'a coach made an 11th group';
+  exception when raise_exception then
+    assert sqlerrm = 'too many groups', 'wrong refusal: ' || sqlerrm; checks := checks + 1; end;
+  checks := checks + 2;
+  delete from public.groups where name like 'Squad %'; -- room for one more group below
+
+  -- Group size: 10 in a friends group, 50 in a coaching group. d, who has no profile yet, is the 11th.
+  reset role;
+  for i in 1..10 loop
+    insert into auth.users (id, email, aud, role) values
+      (('7e570000-0000-4000-8000-0000000001' || lpad(i::text, 2, '0'))::uuid, 'f' || i || '@test.invalid', 'authenticated', 'authenticated');
+    insert into public.profiles (id, name) values (('7e570000-0000-4000-8000-0000000001' || lpad(i::text, 2, '0'))::uuid, 'Filler ' || i);
+  end loop;
+  insert into public.groups (name) values ('Full friends') returning id into gf; -- kind defaults to friends
+  insert into public.groups (name, kind) values ('Full coaching', 'coaching') returning id into gc;
+  insert into public.group_members (group_id, user_id, role)
+    select x, u.id, case when u.id = '7e570000-0000-4000-8000-000000000101' then 'owner' else 'member' end
+    from (values (gf), (gc)) v(x), (select id from public.profiles where id::text like '7e570000-0000-4000-8000-0000000001%') u;
+  insert into private.invites (code, group_id, max_uses, expires_at) values
+    ('TESTGGGG', gf, 5, now() + interval '1 day'), ('TESTHHHH', gc, 5, now() + interval '1 day');
+  assert (select count(*) from public.group_members where group_id = gf) = 10, 'the friends group is not full';
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims', json_build_object('sub', d, 'role', 'authenticated')::text, true);
+  assert public.join_with_code('TESTGGGG', 'Dee') ->> 'error' = 'group_full', 'an 11th person joined a friends group';
+  r := public.join_with_code('TESTHHHH', 'Dee');
+  assert (r ->> 'group')::uuid = gc, 'a coaching group did not take an 11th person: ' || r;
+  assert (select kind from public.groups where id = gc) = 'coaching', 'the coaching group changed kind';
+  checks := checks + 3;
+
+  -- When a coach leaves and a free member takes the group over, it becomes a friends group.
+  perform set_config('request.jwt.claims', json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  gk := public.create_group('Handover');
+  k := public.group_invite(gk);
+  perform set_config('request.jwt.claims', json_build_object('sub', b, 'role', 'authenticated')::text, true);
+  assert (public.join_with_code(k, null) ->> 'group')::uuid = gk, 'b could not join the coaching group';
+  perform set_config('request.jwt.claims', json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  assert (select kind from public.groups where id = gk) = 'coaching', 'the new group is not a coaching group';
+  delete from public.group_members where group_id = gk and user_id = a;
+  get diagnostics n = row_count; assert n = 1, 'a could not leave the coaching group';
+  perform set_config('request.jwt.claims', json_build_object('sub', b, 'role', 'authenticated')::text, true);
+  assert private.is_owner(gk), 'b did not take over the coaching group';
+  assert (select kind from public.groups where id = gk) = 'friends', 'a group with a free owner is still a coaching group';
+  checks := checks + 4;
+
   perform set_config('request.jwt.claims', json_build_object('sub', a, 'role', 'authenticated')::text, true);
   delete from public.posts where id = pb;
   get diagnostics n = row_count; assert n = 1, 'the owner could not remove a post in the group';
@@ -267,9 +345,10 @@ begin
   checks := checks + 5;
 
   -- Clean up: delete the made-up people and codes.
-  delete from auth.users where id in (a, b, c, d);
+  delete from auth.users where id in (a, b, c, d) or id::text like '7e570000-0000-4000-8000-0000000001%';
+  delete from public.groups where id in (gf, gc, gk, g2);
   delete from private.invites where code like 'TEST%';
-  assert not exists (select 1 from public.profiles where id in (a, b, c, d)), 'test people left behind';
+  assert not exists (select 1 from public.profiles where id in (a, b, c, d) or id::text like '7e570000-%'), 'test people left behind';
 
   raise notice 'PASS: % checks', checks;
   perform set_config('pathletics.checks', checks::text, false);

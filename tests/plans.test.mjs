@@ -157,7 +157,7 @@ test("what's saved is read defensively", () => {
   assert.equal(cleanPlan({ title: "x" }), null);
   assert.equal(cleanPlan("x"), null);
   assert.equal(cleanItem({ name: "   " }), null);
-  const many = cleanPlans({ plans: Array.from({ length: 40 }, () => sample(Math.random)) });
+  const many = cleanPlans({ plans: Array.from({ length: LIMITS.plans + 10 }, () => sample(Math.random)) });
   assert.equal(many.plans.length, LIMITS.plans);
   const twins = cleanPlans({ plans: [p, p] });
   assert.equal(twins.plans.length, 1);

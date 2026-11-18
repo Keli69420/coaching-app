@@ -158,9 +158,9 @@ export function refusal(body) {
   const m = isObj(body) ? String(body.message || "") : "";
   return {
     "too many posts": "You've shared a lot this hour. Try again later.",
-    "too many groups": "You already have 10 groups of your own.",
+    "too many groups": "You have as many groups as your account allows.",
     "too many reports": "You've reported a lot today. Try again tomorrow.",
-    "too many plans": "You have 30 shared plans, the most there is room for. Remove one first.",
+    "too many plans": "You've shared as many plans as your account allows. Remove one first.",
     "too many plans today": "You've shared a lot of plans today. Try again tomorrow.",
     "group name": `Give the group a name, up to ${NAME_MAX} characters.`,
     "not the owner": "Only the group's owner can do that.",
