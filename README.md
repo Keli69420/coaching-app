@@ -1,6 +1,6 @@
 # Pathletics
 
-Three tabs for a client training toward a goal, switched at the bottom: **Today**, **Plan**, **Progress**. His profile opens from his picture top right, like Apple Fitness, and his settings are at the bottom of it.
+Tabs for a client training toward a goal, switched at the bottom: **Today**, **Plan**, **Progress**, and **Groups** once it's switched on (see Groups setup). His profile opens from his picture top right, like Apple Fitness, and his settings are at the bottom of it.
 
 **The look** (17 Nov, Keli: "analyze the fitness app by apple… use more than just 1 color"): laid out like Apple's Fitness app on iOS 27. Big bold title, black (or light grey) screen, rounded cards, big coloured numbers with the unit in small capitals, a floating tab bar. Before that it was Strava-style with one pink (17 Nov), and before that near-black glow cards (14–17 Nov).
 
@@ -21,7 +21,9 @@ Four colours, each with one meaning, so they read at a glance:
 - **Plan**: **this week's** workouts, with a segmented bar (lime done, sky up next) and a list marked done, today, up next or missed. Tap one to see it or log it.
 - **Progress**: the **ladder** as three rings (for the first client: pull-ups → chest-to-bar → muscle-up) and a trend card for the step he's on; tap a ring to type a test. Below: workouts and sets this week against last week with mini bars, and one row per exercise with his record and a line of his best per week.
 - **Profile** (his picture top right, Keli 17 Nov): his photo (Keli 17 Nov: chosen under Settings → Profile), else his initial in a pink circle, or a person until he types a name; tapping it opens his name, goal, lifetime workouts, sets and PRs, with a back button to where he was and **Edit profile** (opens Settings → Profile). Under that, his **Activities**: every saved workout as a card, newest first, like Strava's (his name, "Today at 18:30", a title after the time of day such as "Evening Legs", then Time, Sets and PRs). Tapping one opens that workout, with ‹ Profile to go back. At the bottom, **Settings** (see below). `avatarHtml()` in `app.js` is the one place that draws his picture: top right, on the profile, on his activities and in Settings. The photo is cut to the middle square, shrunk to 256 px and kept as a small JPEG on the phone (`coach.avatar`, about 20 KB); `picture.js` holds the crop and the check that only such a JPEG is ever shown.
-- **Settings** (Keli 17 Nov: no tab any more, in categories at the bottom of the profile): a list like Strava's, each row showing its current value and opening its own page with ‹ Profile, which goes back to the same spot. **Profile**: photo (Choose / Change / Remove) and Name. **Appearance**: System / Light / Dark. **Data & privacy**: logs stay on this phone, and deleting the home-screen app deletes them. Name and theme stay on the phone. A new setting goes into `SETTINGS` and `settingHtml()` in `app.js`.
+- **Settings** (Keli 17 Nov: no tab any more, in categories at the bottom of the profile): a list like Strava's, each row showing its current value and opening its own page with ‹ Profile, which goes back to the same spot. **Profile**: photo (Choose / Change / Remove) and Name. **Appearance**: System / Light / Dark. **Account** (only with Groups on): email, Sign out, Delete account (two taps; deletes his posts and memberships, never his logs). **Data & privacy**: logs stay on this phone, and deleting the home-screen app deletes them; with Groups on it also says that what he shares goes to the server. Name and theme stay on the phone. A new setting goes into `SETTINGS` and `settingHtml()` in `app.js`.
+
+- **Groups** (Keli 17 Nov, `groups.js`): invite-only accounts (email + password), groups anyone can make, and posts like Strava's feed. **Share** under a saved workout or under a ladder step he has reached opens a sheet with a preview of exactly what goes (title, day, time, number of sets, PRs; never the set-by-set numbers or notes), who it goes to (always starts on his first group; **Everyone** means every member, a tap of its own each time; nothing is ever on the open web) and an optional caption. A group's owner gets an invite code (7 days, 20 people) that also lets a friend make an account. Posts: Delete your own, Report anyone else's, the owner removes any in the group. Members: the owner removes people; anyone can leave; when the owner leaves, the longest-standing member takes over, and the last one out deletes the group. His name and photo go up with his profile so others see them; signing in on a new phone brings them back down.
 
 **Everything is in English** (Keli, 17 Nov): the screen, the plan-file error messages and the plan itself. From 14 to 17 Nov it was in German; the plan reader still takes German units (`Sek`, `Wdh`).
 
@@ -37,7 +39,8 @@ First open: on **Progress**, tap each ladder ring and type the test result. With
 
 - **Hosting:** GitHub Pages. Free, no renewals.
 - **The plan:** `plans/muscle-up.md`. Keli writes it in the vault at `business/client-plans/muscle-up.md`; `tools/sync_plan.sh` checks it and copies it here.
-- **What the client logs:** on his phone only (localStorage, key `coach.v1`; his name and light/dark setting under `coach.prefs`). Nothing is sent anywhere, and this repo holds no logs and nothing about who the client is. Keep it that way: the repo is public. Removing the home-screen app deletes his logs.
+- **What the client logs:** on his phone only (localStorage, key `coach.v1`; his name and light/dark setting under `coach.prefs`, his photo under `coach.avatar`). Logs are never sent anywhere, and this repo holds no logs and nothing about who the client is.
+- **Groups:** a Supabase project (free plan, EU). Accounts, groups, posts, names and photos live there, behind the rules in `supabase/migrations/`. The sign-in is kept on the phone under `pathletics.session` (never the password). Only the project URL and the **publishable** key are in this repo (`config.js`); a secret key must never be. Keep it that way: the repo is public. Removing the home-screen app deletes his logs.
 - **Offline:** `sw.js` keeps a copy of the page and the plan, so it opens with no signal. A changed plan reaches the phone the next time it opens with signal (sometimes one open later).
 
 ## The plan file
@@ -95,13 +98,21 @@ It prints every plan as the app will read it and refuses typos with a line numbe
 | Colours, fonts, the design rules | top of `styles.css` (light and dark tokens; `--pink`, `--lime`, `--sky`, `--gold`) |
 | Light/dark before first paint | inline script in `index.html` (keep in step with `applyTheme()` in `app.js`) |
 | App name | `index.html` (title, apple-mobile-web-app-title, h1) and `manifest.webmanifest` |
+| Groups screens and buttons | `groups.js` |
+| Calls to the Groups server, signing in | `social.js` (plain fetch, no library) |
+| What a post holds, cleaning what the server sends, error wording | `share-logic.js` (tested) |
+| Who may see and do what on the server | `supabase/migrations/20261117000001_groups.sql`, checked by `supabase/tests/rls.sql` |
+| Groups on or off, which server | `config.js` (empty = off) and `connect-src` in `index.html` |
+| What the page may load (security policy) | the `Content-Security-Policy` meta in `index.html`. It holds a hash of the inline theme script: change that script and make the hash again (`python3 -c` over the script's text, sha256, base64) or the theme stops working |
 | Icon | `tools/icon.html` draws it, `python3 -I tools/make_icon.py` saves `icon-180.png` and `icon-512.png` (open the link it prints) |
 
 **Before pushing:**
 
 ```bash
-node --test tests/logic.test.mjs tests/picture.test.mjs
+node --test tests/logic.test.mjs tests/picture.test.mjs tests/share-logic.test.mjs
 ```
+
+After changing anything in `supabase/`, also run the rules test against the local server (see Groups setup) and see `PASS`.
 
 A new file the app imports goes into `SHELL` in `sw.js`, with the cache name bumped in the same commit. New helpers go in new files rather than `logic.js`: the service worker fetches each file separately, so a new `app.js` can meet an old saved `logic.js` once.
 
@@ -113,6 +124,33 @@ python3 -m http.server 8921 --bind 127.0.0.1 --directory qa/site
 
 **After changing any file the phone caches,** bump `CACHE` in `sw.js` only if a file is added or removed from `SHELL`. Changed contents are picked up without it.
 
+## Groups setup
+
+**Keli, once** (I can't make accounts or handle passwords):
+
+1. Make a free account at supabase.com and **one project**, region **EU** (Frankfurt or Zurich). Keep the database password in your password manager; the app never needs it.
+2. **Connect** (button at the top of the project) shows the **Project URL** and the **publishable** key (`sb_publishable_…`; also under **Project Settings → API Keys**). Send me both. Never the secret key.
+3. **Authentication → Sign In / Providers → Email**: switch **Confirm email** off (Supabase's own mail only reaches you, so nobody else could confirm).
+4. **SQL Editor**: paste all of `supabase/migrations/20261117000001_groups.sql`, Run. Then paste all of `supabase/tests/rls.sql`, Run: the last line must say `PASS: 66 checks`.
+5. **Authentication → Hooks → Before User Created → Postgres**: schema `public`, function `hook_require_invite`, save. Now sign-ups without a code are refused.
+6. **SQL Editor**: run snippet 1 of `supabase/owner-snippets.sql`. It prints your own invite code. In the app: Groups → I have an invite code.
+7. Make a group, tap **Invite friends**, send the code.
+
+**Turning it on** (me, after step 2): put the URL and key in `config.js`, put the exact project URL in `connect-src` in `index.html` instead of `https://*.supabase.co`, push.
+
+**Owner jobs** (`supabase/owner-snippets.sql`, one snippet at a time in the SQL Editor): a new invite code; a new password for someone who forgot theirs; read reports; remove a post; see everyone; remove someone completely.
+
+**Testing locally:** Colima + Docker + the Supabase CLI are installed on Keli's Mac.
+
+```bash
+colima start
+supabase start -x realtime,storage-api,imgproxy,mailpit,studio,edge-runtime,logflare,vector,supavisor,postgres-meta
+supabase db reset
+docker exec -i supabase_db_coaching-app psql -U postgres -d postgres < supabase/tests/rls.sql
+```
+
+`supabase/config.toml` switches the sign-up hook on locally. For the app, `qa/site/config.js` points at `http://127.0.0.1:54321` with the local publishable key (`supabase status`), and `qa/site/index.html` gets that address added to `connect-src`.
+
 ## Don't touch
 
 - The `coach.v1` storage key. If the data shape ever has to change, migrate on load and keep the old key as a backup.
@@ -123,3 +161,5 @@ python3 -m http.server 8921 --bind 127.0.0.1 --directory qa/site
 - One phone, no backup, no way for the coach to see logs remotely. Fine while the coach sees him every week.
 - One goal per app for now (`PLAN_URL` in `app.js`). A client with a different goal needs a way to pick the plan file, probably a per-client link.
 - Reps and seconds only, no kg.
+- **Groups:** a free Supabase project pauses after a week nobody opens Groups; Groups then says it can't be reached until Keli un-pauses it in the dashboard (logging is never affected). No emails, so a forgotten password is reset by Keli with a snippet. No videos yet (Step 4: about 40 clips of 20 seconds fit the free 1 GB). No followers yet (Step 3). Posts can't be edited, only deleted. New posts show when Groups is opened or its tab tapped again, not live.
+- Every app on `keli69420.github.io` shares one browser storage, so the sign-in there could be read by Keli's other apps. Fine while they're all his; an own domain before Groups goes public.

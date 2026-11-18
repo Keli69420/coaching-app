@@ -416,18 +416,59 @@ ul { margin: 0; padding: 0; list-style: none; }
 /* Hidden from the eye, not from the phone: a label around it opens the photo picker. */
 .vh { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; opacity: 0; }
 
+/* ---------- Groups (groups.js) ---------- */
+
+/* Pink, tinted: a second action under a card, like Share under a saved workout. */
+.sharebtn {
+  display: block; width: 100%; height: 48px; margin-top: 12px; border-radius: 999px;
+  background: color-mix(in srgb, var(--pink) 14%, var(--card)); color: var(--pink-ink); font-size: 17px; font-weight: 600;
+}
+.sharebtn:active { filter: brightness(.95); }
+.cta:disabled, .sharebtn:disabled { opacity: .45; }
+.quiet.danger { color: var(--bad); }
+.gnote { margin: -4px 0 12px; font-size: 15px; font-weight: 600; color: var(--lime-ink); }
+.gwarn { margin-bottom: 14px; }
+.gwarn .ghostbtn { margin-top: 10px; }
+.gshare { margin-top: 16px; }
+.gtop { margin-top: 0; }
+.gload { padding: 18px; color: var(--muted); }
+.gicon {
+  flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%;
+  background: color-mix(in srgb, var(--pink) 14%, var(--card)); color: var(--pink-ink);
+}
+.gicon svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.gicon.plus { font: 700 22px var(--round); }
+.row.add { min-height: 58px; }
+.row.add b { color: var(--pink-ink); }
+/* A post: an activity card with who shared it, and Delete / Report on the right. */
+.post .actwho { width: 100%; }
+.gact { flex: none; margin-left: auto; padding: 6px 2px 6px 10px; font-size: 14px; font-weight: 500; color: var(--muted); }
+.gact.armed { color: var(--bad); font-weight: 600; }
+.skilltag { display: flex; align-items: center; gap: 6px; margin-top: 12px; font-size: 13px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: var(--lime-ink); }
+.skilltag + .acttitle { margin-top: 2px; }
+.post .prs { margin-top: 12px; }
+.caption { margin-top: 10px; font-size: 16px; line-height: 1.4; white-space: pre-line; overflow-wrap: anywhere; }
+.mrow { display: flex; align-items: center; gap: 12px; min-height: 58px; padding: 10px 18px; }
+.mrow .rtext { flex: 1; min-width: 0; }
+.invite { padding: 16px 18px 18px; }
+.invite .code { margin: 4px 0 6px; font: 700 34px var(--round); letter-spacing: .06em; }
+.invite .hint { font-size: 15px; color: var(--ink-2); }
+.pinkbtn { margin-top: 12px; background: color-mix(in srgb, var(--pink) 14%, var(--card)); color: var(--pink-ink); }
+.grow .val { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; font-size: 17px; color: var(--muted); }
+.share .acts { margin-bottom: 4px; }
+
 /* ---------- the tab bar: a frosted capsule floating above the bottom edge ---------- */
 
 .tabs {
   position: fixed; z-index: 5; left: 50%; transform: translateX(-50%);
   bottom: max(14px, calc(env(safe-area-inset-bottom) - 12px));
   width: min(calc(100% - 32px), 440px); height: 64px; padding: 5px;
-  display: grid; grid-template-columns: repeat(3, 1fr);
+  display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; /* one column per shown tab */
   border-radius: 999px; border: 1px solid var(--glass-line);
   background: var(--glass); box-shadow: var(--glass-shadow);
   -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%);
 }
-.tabs[hidden] { display: none; }
+.tabs[hidden], .tabs button[hidden] { display: none; }
 .tabs button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-radius: 999px; color: var(--ink); font-size: 11px; font-weight: 600; }
 .tabs svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
 .tabs button[aria-current="page"] { background: var(--fill); color: var(--pink-ink); }

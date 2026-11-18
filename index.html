@@ -6,6 +6,9 @@
   <title>Pathletics</title>
   <meta name="description" content="Today's workout from your coach's plan. Log what you did and see how far you've come.">
   <meta name="robots" content="noindex">
+  <!-- What the page may load and talk to. Groups only ever talks to Supabase. blob: is the photo he picks, read on the phone. The hash is the theme
+       script below: change one letter of it and the hash must be made again (README). -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wshdTYRzjktc2JXX+JjFmw/x/vaChYS+IV8RFpsEgzs='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://*.supabase.co; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
   <meta name="theme-color" content="#F2F2F7">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
@@ -54,6 +57,11 @@
     <button type="button" data-page="progress">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 20v-6M12 20V9M18.5 20V4"/></svg>
       <span>Progress</span>
+    </button>
+    <!-- Shown by app.js once config.js points at the Groups server. -->
+    <button type="button" data-page="groups" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8.5" r="3.5"/><path d="M2.5 19.5c.9-3.4 3.4-5.2 6.5-5.2s5.6 1.8 6.5 5.2"/><path d="M15.5 5.3a3.5 3.5 0 0 1 0 6.4M17.6 14.6c2 .7 3.3 2.4 3.9 4.9"/></svg>
+      <span>Groups</span>
     </button>
   </nav>
   <noscript><p>This page needs JavaScript.</p></noscript>

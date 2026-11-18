@@ -6,6 +6,11 @@ import {
   allTimeTotals, cleanPrefs, elapsed, hasClock, pauseClock, resumeClock, fmtClock, fmtDuration, activities,
 } from "./logic.js";
 import { AVATAR_PX, cropRect, cleanAvatar } from "./picture.js";
+import { activitySnapshot, skillSnapshot } from "./share-logic.js";
+import {
+  groupsOn, initGroups, groupsHtml, groupsClick, groupsSubmit, groupsInput, enterGroups,
+  sharing, stopShare, startShare, shareHtml, accountHtml, accountValue, profileChanged,
+} from "./groups.js";
 
 // The coach's plan. One file holds the ladder and every starting level (Plan A, B, C...).
 const PLAN_URL = "plans/muscle-up.md";
@@ -32,9 +37,10 @@ const pagesEl = document.getElementById("pages");
 const statusEl = document.getElementById("status");
 
 let today = todayIso();
-// Three tabs (Keli, 17 Nov): "today" shows only today's workout, "plan" this week's workouts,
-// "progress" the ladder and his numbers. "profile" has no tab: his picture top right opens it,
-// like Apple Fitness, and Settings sit at its bottom as categories. Always opens on today.
+// Tabs (Keli, 17 Nov): "today" shows only today's workout, "plan" this week's workouts,
+// "progress" the ladder and his numbers, "groups" his groups and what people share (groups.js;
+// the tab is there only once config.js points at a server). "profile" has no tab: his picture top
+// right opens it, like Apple Fitness, and Settings sit at its bottom as categories. Always opens on today.
 let page = "today";
 let before = "today"; // the page the profile was opened from, for its back button
 let opened = null; // on the profile: the saved workout opened from his activities (its key)
@@ -194,6 +200,8 @@ function render() {
   chipEl.innerHTML = !picked || program.plans.length === 1 ? ""
     : `<button type="button" class="chip${pickerOpen ? " on" : ""}" data-act="picker" aria-expanded="${pickerOpen}" aria-label="Plan ${esc(picked.id)}. Tap to switch.">Plan ${esc(picked.id)}</button>`;
   if (pickerOpen || !picked) main.innerHTML = pickerHtml(picked);
+  else if (sharing()) main.innerHTML = shareHtml();
+  else if (page === "groups") main.innerHTML = groupsHtml();
   else if (page === "progress") main.innerHTML = progressHtml();
   else if (page === "profile") main.innerHTML = opened ? sessionHtml(shownIndex()) : setting ? settingHtml(setting) : profileHtml();
   else if (page === "plan" && viewing == null) main.innerHTML = weekHtml();
@@ -276,6 +284,7 @@ function savedHtml(s, next) {
       </div>
       ${records.length ? `<ul class="prs">${records.map((r) => `<li>${MEDAL}<span class="prname">${esc(r.name)}</span><span class="prval">${numHtml(r.best, r.unit)}</span></li>`).join("")}</ul>` : ""}
     </div>
+    ${groupsOn ? `<button type="button" class="sharebtn" data-act="share" data-kind="activity" data-key="${esc(s.key)}">Share</button>` : ""}
     ${nextName ? `<p class="next">Up next: ${esc(nextName)}</p>` : ""}
     <button type="button" class="quiet" data-act="delete">Delete workout</button>`;
 }
@@ -456,7 +465,8 @@ function testHtml(step) {
         <button type="submit" class="btn">Save</button>
         <button type="button" class="x" data-act="closetest" aria-label="Close">×</button>
       </div>
-    </form>`;
+    </form>
+    ${groupsOn && step.done ? `<button type="button" class="sharebtn" data-act="share" data-kind="skill" data-step="${esc(step.key)}">Share this skill</button>` : ""}`;
 }
 
 // One number per card, Apple Fitness style: title, "This week", the number big in the card's
@@ -576,7 +586,7 @@ function shrinkPhoto(file) {
     img.src = url;
   });
 }
-const PAGE_NAMES = { today: "Today", plan: "Plan", progress: "Progress" };
+const PAGE_NAMES = { today: "Today", plan: "Plan", progress: "Progress", groups: "Groups" };
 
 function profileHtml() {
   const all = allTimeTotals(program.plans.flatMap(sessionsOf), state.logs);
@@ -637,7 +647,8 @@ const THEMES = [["system", "System"], ["light", "Light"], ["dark", "Dark"]];
 const SETTINGS = [
   { key: "profile", label: "Profile", value: () => prefs.name.trim() || "Add your name" },
   { key: "appearance", label: "Appearance", value: () => (THEMES.find(([v]) => v === prefs.theme) || THEMES[0])[1] },
-  { key: "data", label: "Data & privacy", value: () => "On this phone" },
+  ...(groupsOn ? [{ key: "account", label: "Account", value: accountValue }] : []),
+  { key: "data", label: "Data & privacy", value: () => (groupsOn ? "Logs on this phone" : "On this phone") },
 ];
 
 function settingHtml(key) {
@@ -658,7 +669,9 @@ function settingHtml(key) {
           <input id="name" type="text" maxlength="40" autocomplete="off" autocapitalize="words" enterkeyhint="done" placeholder="Add your name" value="${esc(prefs.name)}">
         </label>
       </div>
-      <p class="foot">Your photo and name show on your profile and your activities. Both stay on this phone.</p>`;
+      <p class="foot">${groupsOn
+        ? "Your photo and name show on your profile and your activities, and in Groups to the people you share with."
+        : "Your photo and name show on your profile and your activities. Both stay on this phone."}</p>`;
   } else if (cat.key === "appearance") {
     body = `
       <div class="card group">
@@ -669,10 +682,14 @@ function settingHtml(key) {
         </div>
       </div>
       <p class="foot">System follows your phone's light or dark mode.</p>`;
+  } else if (cat.key === "account") {
+    body = accountHtml();
   } else {
     body = `
       <div class="card info">
-        <p>Everything you log is saved on this phone only. Nothing is sent anywhere.</p>
+        ${groupsOn
+          ? `<p>Everything you log is saved on this phone only. Only what you share in Groups goes to the Pathletics server, with your name and photo, and stays there until you delete it.</p>`
+          : `<p>Everything you log is saved on this phone only. Nothing is sent anywhere.</p>`}
         <p>Keep Pathletics on your home screen: deleting it from there deletes your logs too.</p>
       </div>`;
   }
@@ -710,6 +727,7 @@ root.addEventListener("change", async (e) => {
   try {
     avatar = await shrinkPhoto(file);
     statusEl.textContent = saveAvatar() ? "" : "photo not saved";
+    profileChanged();
   } catch {
     statusEl.textContent = "couldn't use that photo";
   }
@@ -723,11 +741,16 @@ root.addEventListener("input", (e) => {
     prefs.name = el.value.slice(0, 40);
     savePrefs();
     drawMe();
+    profileChanged();
     if (page === "profile") {
       const shown = prefs.name.trim() || "You";
       main.querySelectorAll(".avatar").forEach((a) => { a.innerHTML = avatarHtml(); });
       main.querySelectorAll(".pname, .actmeta b").forEach((b) => { b.textContent = shown; });
     }
+    return;
+  }
+  if (el.id === "gcaption") {
+    groupsInput(el);
     return;
   }
   if (el.id === "note") {
@@ -776,6 +799,10 @@ root.addEventListener("keydown", (e) => {
 
 root.addEventListener("submit", (e) => {
   e.preventDefault();
+  if (e.target.matches("form.gform")) {
+    groupsSubmit(e.target);
+    return;
+  }
   const form = e.target.closest("form.test");
   if (!form) return;
   const raw = form.querySelector("input").value;
@@ -811,6 +838,30 @@ root.addEventListener("click", (e) => {
   const btn = e.target.closest("[data-act]");
   if (!btn) return;
   const act = btn.dataset.act;
+  if (act.startsWith("g-")) {
+    groupsClick(act, btn);
+    return;
+  }
+  // Share a saved workout or an unlocked skill: only a summary goes, never the sets or notes.
+  if (act === "share") {
+    const all = program.plans.flatMap(sessionsOf);
+    let snap = null;
+    if (btn.dataset.kind === "skill") {
+      const step = ladderState(program.ladder, state.logs, state.tests).steps.find((x) => x.key === btn.dataset.step);
+      if (step?.done) snap = skillSnapshot(step);
+    } else {
+      const s = all.find((x) => x.key === btn.dataset.key);
+      const a = s && activities(all, state.logs).find((x) => x.key === s.key);
+      if (a) snap = activitySnapshot(a, sessionSummary(all, state.logs, s).records);
+    }
+    if (!snap) return;
+    flush();
+    testing = null;
+    startShare(btn.dataset.kind, snap);
+    render();
+    toTop();
+    return;
+  }
   if (act === "test") {
     testing = testing === btn.dataset.step ? null : btn.dataset.step;
     redrawLadder();
@@ -825,6 +876,7 @@ root.addEventListener("click", (e) => {
   if (act === "unphoto") {
     avatar = "";
     statusEl.textContent = saveAvatar() ? "" : "photo not saved";
+    profileChanged();
     render();
     return;
   }
@@ -950,6 +1002,7 @@ root.addEventListener("click", (e) => {
 // His picture top right opens his profile; tapping it there again goes back.
 meEl.addEventListener("click", () => {
   flush();
+  stopShare();
   opened = null;
   setting = null;
   if (page === "profile") page = before;
@@ -963,8 +1016,13 @@ meEl.addEventListener("click", () => {
 pagesEl.addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-page]");
   if (!btn) return;
-  if (btn.dataset.page === page && viewing == null) { toTop(); return; }
+  if (btn.dataset.page === page && viewing == null && !sharing()) {
+    toTop();
+    if (page === "groups") enterGroups(); // tapping Groups again looks for new posts
+    return;
+  }
   flush();
+  stopShare();
   page = btn.dataset.page;
   viewing = null;
   opened = null;
@@ -972,7 +1030,29 @@ pagesEl.addEventListener("click", (e) => {
   testing = null;
   render();
   toTop();
+  if (page === "groups") enterGroups();
 });
+
+// What groups.js needs from here: the drawing helpers, his name and picture, and where he is.
+function goGroups(quiet = false) {
+  page = "groups";
+  viewing = null;
+  opened = null;
+  setting = null;
+  testing = null;
+  render();
+  toTop();
+  if (!quiet) enterGroups();
+}
+initGroups({
+  esc, LEFT, RIGHT, TICK, MEDAL, PERSON, count, numHtml, fmtDuration, armed, render, toTop, goGroups, avatarHtml,
+  page: () => page,
+  myName: () => prefs.name.trim(),
+  setName: (n) => { prefs.name = String(n).slice(0, 40); savePrefs(); drawMe(); },
+  myAvatar: () => avatar,
+  setAvatar: (a) => { avatar = cleanAvatar(a); saveAvatar(); drawMe(); },
+});
+pagesEl.querySelector('[data-page="groups"]').hidden = !groupsOn;
 
 /* ---------- staying right when the app comes back ---------- */
 
