@@ -243,12 +243,13 @@ ul { margin: 0; padding: 0; list-style: none; }
 /* The weight under each set (18 Nov): a small pill, empty for bodyweight. */
 .sets .set { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .set .k {
-  display: block; width: 56px; height: 26px; padding: 0; border: 0; border-radius: 13px;
+  display: block; width: 56px; height: 28px; padding: 0; border: 0; border-radius: 14px;
   background: transparent; box-shadow: inset 0 0 0 1.5px var(--fill); color: var(--ink);
-  font-family: var(--round); font-variant-numeric: tabular-nums; font-size: 13px; font-weight: 700; text-align: center;
+  /* 16px and no smaller: under that, Safari on the iPhone zooms the whole page when the box is tapped. */
+  font-family: var(--round); font-variant-numeric: tabular-nums; font-size: 16px; font-weight: 700; letter-spacing: -.3px; text-align: center;
   -webkit-appearance: none; appearance: none;
 }
-.set .k::placeholder { font-weight: 600; color: var(--muted); }
+.set .k::placeholder { font-size: 13px; font-weight: 600; letter-spacing: 0; color: var(--muted); }
 .set .k:focus { outline: none; box-shadow: inset 0 0 0 2px var(--lime-line); }
 .times { margin: 0 .3em; font-weight: 600; color: var(--muted); }
 .f::selection { background: color-mix(in srgb, var(--lime-line) 35%, transparent); color: var(--ink); }
