@@ -285,7 +285,8 @@ ul { margin: 0; padding: 0; list-style: none; }
 .segs { display: flex; gap: 6px; margin-top: 14px; }
 .segs i { flex: 1; height: 8px; border-radius: 4px; background: var(--fill); }
 .segs i.done { background: var(--lime-line); }
-.segs i.next { background: var(--sky); }
+/* margin-top: the "Up next" line under a saved workout is also called .next, and its margin pushed this segment down. */
+.segs i.next { margin-top: 0; background: var(--sky); }
 .rows { margin-top: 12px; }
 .rows > li + li { border-top: 1px solid var(--line); }
 .row { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 66px; padding: 12px 18px; text-align: left; }
